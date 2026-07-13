@@ -16,6 +16,7 @@ struct ElementDefinition
     float level = 1.0f;
     float pan = 0.0f;
     float tuningCents = 0.0f;
+    juce::String filterType { "lowPass12" };
     float ampAttack = 0.0f;
     float ampSustain = 1.0f;
     float ampRelease = 0.0f;

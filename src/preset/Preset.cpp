@@ -65,6 +65,7 @@ juce::Result loadPatch(const juce::File& file, Patch& patch)
         element.level = static_cast<float>(elementVar.getProperty("level", 1.0));
         element.pan = static_cast<float>(elementVar.getProperty("pan", 0.0));
         element.tuningCents = static_cast<float>(elementVar.getProperty("tuningCents", 0.0));
+        element.filterType = elementVar.getProperty("filterType", "lowPass12").toString();
         element.ampAttack = static_cast<float>(elementVar.getProperty("ampAttack", 0.0));
         element.ampSustain = static_cast<float>(elementVar.getProperty("ampSustain", 1.0));
         element.ampRelease = static_cast<float>(elementVar.getProperty("ampRelease", 0.0));

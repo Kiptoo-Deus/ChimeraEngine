@@ -7,6 +7,71 @@ namespace chimera::dsp
 namespace
 {
 constexpr float pi = 3.14159265358979323846f;
+
+enum class BiquadShape
+{
+    LowPass,
+    HighPass,
+    BandPass,
+    Notch,
+    Peak,
+    LowShelf,
+    HighShelf,
+    AllPass
+};
+
+bool cascadesMode(FilterMode mode)
+{
+    return mode == FilterMode::LowPass24
+        || mode == FilterMode::HighPass24
+        || mode == FilterMode::BandPass24;
+}
+
+float modeQ(FilterMode mode, float resonance)
+{
+    if (mode == FilterMode::LowPassWide || mode == FilterMode::HighPassWide || mode == FilterMode::BandPassWide)
+        return 0.5f;
+
+    if (mode == FilterMode::LowPassNarrow || mode == FilterMode::BandPassNarrow)
+        return std::max(2.0f, resonance);
+
+    return resonance;
+}
+
+BiquadShape modeShape(FilterMode mode)
+{
+    switch (mode)
+    {
+        case FilterMode::HighPass6:
+        case FilterMode::HighPass12:
+        case FilterMode::HighPass24:
+        case FilterMode::HighPassWide:
+            return BiquadShape::HighPass;
+        case FilterMode::BandPass12:
+        case FilterMode::BandPass24:
+        case FilterMode::BandPassWide:
+        case FilterMode::BandPassNarrow:
+            return BiquadShape::BandPass;
+        case FilterMode::Notch:
+            return BiquadShape::Notch;
+        case FilterMode::Peak:
+            return BiquadShape::Peak;
+        case FilterMode::LowShelf:
+            return BiquadShape::LowShelf;
+        case FilterMode::HighShelf:
+            return BiquadShape::HighShelf;
+        case FilterMode::Bypass:
+            return BiquadShape::AllPass;
+        case FilterMode::LowPass6:
+        case FilterMode::LowPass12:
+        case FilterMode::LowPass24:
+        case FilterMode::LowPassWide:
+        case FilterMode::LowPassNarrow:
+            return BiquadShape::LowPass;
+    }
+
+    return BiquadShape::LowPass;
+}
 }
 
 void Filter::setSampleRate(double newSampleRate)
@@ -45,7 +110,9 @@ void Filter::update()
     const auto omega = 2.0f * pi * f / static_cast<float>(sampleRate);
     const auto sn = std::sin(omega);
     const auto cs = std::cos(omega);
-    const auto alpha = sn / (2.0f * resonance);
+    const auto effectiveQ = modeQ(mode, resonance);
+    const auto alpha = sn / (2.0f * effectiveQ);
+    const auto shelfGain = std::sqrt(std::pow(10.0f, 6.0f / 20.0f));
 
     float b0 = 1.0f;
     float b1n = 0.0f;
@@ -54,10 +121,9 @@ void Filter::update()
     float a1n = 0.0f;
     float a2n = 0.0f;
 
-    switch (mode)
+    switch (modeShape(mode))
     {
-        case FilterMode::LowPass12:
-        case FilterMode::LowPass24:
+        case BiquadShape::LowPass:
             b0 = (1.0f - cs) * 0.5f;
             b1n = 1.0f - cs;
             b2n = (1.0f - cs) * 0.5f;
@@ -65,7 +131,7 @@ void Filter::update()
             a1n = -2.0f * cs;
             a2n = 1.0f - alpha;
             break;
-        case FilterMode::HighPass:
+        case BiquadShape::HighPass:
             b0 = (1.0f + cs) * 0.5f;
             b1n = -(1.0f + cs);
             b2n = (1.0f + cs) * 0.5f;
@@ -73,7 +139,7 @@ void Filter::update()
             a1n = -2.0f * cs;
             a2n = 1.0f - alpha;
             break;
-        case FilterMode::BandPass:
+        case BiquadShape::BandPass:
             b0 = alpha;
             b1n = 0.0f;
             b2n = -alpha;
@@ -81,10 +147,42 @@ void Filter::update()
             a1n = -2.0f * cs;
             a2n = 1.0f - alpha;
             break;
-        case FilterMode::Notch:
+        case BiquadShape::Notch:
             b0 = 1.0f;
             b1n = -2.0f * cs;
             b2n = 1.0f;
+            a0n = 1.0f + alpha;
+            a1n = -2.0f * cs;
+            a2n = 1.0f - alpha;
+            break;
+        case BiquadShape::Peak:
+            b0 = 1.0f + alpha * shelfGain;
+            b1n = -2.0f * cs;
+            b2n = 1.0f - alpha * shelfGain;
+            a0n = 1.0f + alpha / shelfGain;
+            a1n = -2.0f * cs;
+            a2n = 1.0f - alpha / shelfGain;
+            break;
+        case BiquadShape::LowShelf:
+            b0 = shelfGain * ((shelfGain + 1.0f) - (shelfGain - 1.0f) * cs + 2.0f * std::sqrt(shelfGain) * alpha);
+            b1n = 2.0f * shelfGain * ((shelfGain - 1.0f) - (shelfGain + 1.0f) * cs);
+            b2n = shelfGain * ((shelfGain + 1.0f) - (shelfGain - 1.0f) * cs - 2.0f * std::sqrt(shelfGain) * alpha);
+            a0n = (shelfGain + 1.0f) + (shelfGain - 1.0f) * cs + 2.0f * std::sqrt(shelfGain) * alpha;
+            a1n = -2.0f * ((shelfGain - 1.0f) + (shelfGain + 1.0f) * cs);
+            a2n = (shelfGain + 1.0f) + (shelfGain - 1.0f) * cs - 2.0f * std::sqrt(shelfGain) * alpha;
+            break;
+        case BiquadShape::HighShelf:
+            b0 = shelfGain * ((shelfGain + 1.0f) + (shelfGain - 1.0f) * cs + 2.0f * std::sqrt(shelfGain) * alpha);
+            b1n = -2.0f * shelfGain * ((shelfGain - 1.0f) + (shelfGain + 1.0f) * cs);
+            b2n = shelfGain * ((shelfGain + 1.0f) + (shelfGain - 1.0f) * cs - 2.0f * std::sqrt(shelfGain) * alpha);
+            a0n = (shelfGain + 1.0f) - (shelfGain - 1.0f) * cs + 2.0f * std::sqrt(shelfGain) * alpha;
+            a1n = 2.0f * ((shelfGain - 1.0f) - (shelfGain + 1.0f) * cs);
+            a2n = (shelfGain + 1.0f) - (shelfGain - 1.0f) * cs - 2.0f * std::sqrt(shelfGain) * alpha;
+            break;
+        case BiquadShape::AllPass:
+            b0 = 1.0f - alpha;
+            b1n = -2.0f * cs;
+            b2n = 1.0f + alpha;
             a0n = 1.0f + alpha;
             a1n = -2.0f * cs;
             a2n = 1.0f - alpha;
@@ -108,8 +206,11 @@ float Filter::processOnePolePair(float input)
 
 float Filter::process(float input)
 {
+    if (mode == FilterMode::Bypass)
+        return input;
+
     auto output = processOnePolePair(input);
-    if (mode == FilterMode::LowPass24)
+    if (cascadesMode(mode))
     {
         const auto savedZ1 = z1;
         const auto savedZ2 = z2;

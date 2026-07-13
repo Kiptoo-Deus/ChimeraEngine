@@ -7,6 +7,26 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PRESETS = ROOT / "presets"
+FILTER_TYPES = {
+    "bypass",
+    "lowPass6",
+    "lowPass12",
+    "lowPass24",
+    "lowPassWide",
+    "lowPassNarrow",
+    "highPass6",
+    "highPass12",
+    "highPass24",
+    "highPassWide",
+    "bandPass12",
+    "bandPass24",
+    "bandPassWide",
+    "bandPassNarrow",
+    "notch",
+    "peak",
+    "lowShelf",
+    "highShelf",
+}
 
 
 def fail(message: str) -> int:
@@ -61,6 +81,10 @@ def validate_patch(path: pathlib.Path) -> list[str]:
         tuning_cents = element.get("tuningCents", 0.0)
         if not isinstance(tuning_cents, (int, float)) or tuning_cents < -1200.0 or tuning_cents > 1200.0:
             errors.append(f"{path}: element {index} tuningCents must be between -1200.0 and 1200.0")
+
+        filter_type = element.get("filterType", "lowPass12")
+        if filter_type not in FILTER_TYPES:
+            errors.append(f"{path}: element {index} filterType is unsupported: {filter_type}")
 
         amp_attack = element.get("ampAttack", 0.0)
         if not isinstance(amp_attack, (int, float)) or amp_attack < 0.0 or amp_attack > 10.0:

@@ -116,15 +116,45 @@ void testVoiceAllocator()
 
 void testFilterStability()
 {
-    chimera::dsp::Filter filter;
-    filter.setSampleRate(48000.0);
-    filter.setCutoff(1000.0f);
-    filter.setResonance(0.707f);
-    auto value = 0.0f;
-    for (int i = 0; i < 1024; ++i)
+    static_assert(chimera::dsp::filterModeCount == 18);
+
+    const auto modes = {
+        chimera::dsp::FilterMode::Bypass,
+        chimera::dsp::FilterMode::LowPass6,
+        chimera::dsp::FilterMode::LowPass12,
+        chimera::dsp::FilterMode::LowPass24,
+        chimera::dsp::FilterMode::LowPassWide,
+        chimera::dsp::FilterMode::LowPassNarrow,
+        chimera::dsp::FilterMode::HighPass6,
+        chimera::dsp::FilterMode::HighPass12,
+        chimera::dsp::FilterMode::HighPass24,
+        chimera::dsp::FilterMode::HighPassWide,
+        chimera::dsp::FilterMode::BandPass12,
+        chimera::dsp::FilterMode::BandPass24,
+        chimera::dsp::FilterMode::BandPassWide,
+        chimera::dsp::FilterMode::BandPassNarrow,
+        chimera::dsp::FilterMode::Notch,
+        chimera::dsp::FilterMode::Peak,
+        chimera::dsp::FilterMode::LowShelf,
+        chimera::dsp::FilterMode::HighShelf,
+    };
+
+    assert(static_cast<int>(modes.size()) == chimera::dsp::filterModeCount);
+
+    for (const auto mode : modes)
     {
-        value = filter.process(i == 0 ? 1.0f : 0.0f);
-        assert(std::isfinite(value));
+        chimera::dsp::Filter filter;
+        filter.setSampleRate(48000.0);
+        filter.setMode(mode);
+        filter.setCutoff(1000.0f);
+        filter.setResonance(0.707f);
+
+        auto value = 0.0f;
+        for (int i = 0; i < 1024; ++i)
+        {
+            value = filter.process(i == 0 ? 1.0f : 0.0f);
+            assert(std::isfinite(value));
+        }
     }
 }
 
@@ -217,7 +247,8 @@ void testPresetLoader()
       "rootKey": 60,
       "keyRange": [0, 127],
       "velocityRange": [1, 127],
-      "tuningCents": 5.5
+      "tuningCents": 5.5,
+      "filterType": "highPass12"
     }
   ]
 })json");
@@ -229,6 +260,7 @@ void testPresetLoader()
     assert(patch.elements.size() == 1);
     assert(patch.elements[0].rootKey == 60);
     assert(std::abs(patch.elements[0].tuningCents - 5.5f) < 0.001f);
+    assert(patch.elements[0].filterType == "highPass12");
     temp.deleteFile();
 }
 }

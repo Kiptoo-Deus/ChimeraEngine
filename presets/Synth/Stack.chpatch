@@ -12,6 +12,7 @@
       "level": 0.55,
       "pan": -0.2,
       "tuningCents": -7.0,
+      "filterType": "lowPass24",
       "ampAttack": 0.0,
       "ampSustain": 1.0,
       "ampRelease": 0.05
@@ -24,6 +25,7 @@
       "level": 0.35,
       "pan": 0.2,
       "tuningCents": 7.0,
+      "filterType": "bandPassWide",
       "ampAttack": 0.01,
       "ampSustain": 0.9,
       "ampRelease": 0.15
@@ -36,6 +38,7 @@
       "level": 0.45,
       "pan": 0.0,
       "tuningCents": 0.0,
+      "filterType": "lowShelf",
       "ampAttack": 0.08,
       "ampSustain": 0.75,
       "ampRelease": 0.35

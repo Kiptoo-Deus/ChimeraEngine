@@ -35,6 +35,30 @@ int arpeggiatorStepSamples(double sampleRate)
 {
     return std::max(1, static_cast<int>(std::round(sampleRate * 0.125)));
 }
+
+chimera::dsp::FilterMode filterModeFromString(const juce::String& filterType)
+{
+    const auto type = filterType.trim().toLowerCase();
+    if (type == "bypass") return chimera::dsp::FilterMode::Bypass;
+    if (type == "lowpass6") return chimera::dsp::FilterMode::LowPass6;
+    if (type == "lowpass12") return chimera::dsp::FilterMode::LowPass12;
+    if (type == "lowpass24") return chimera::dsp::FilterMode::LowPass24;
+    if (type == "lowpasswide") return chimera::dsp::FilterMode::LowPassWide;
+    if (type == "lowpassnarrow") return chimera::dsp::FilterMode::LowPassNarrow;
+    if (type == "highpass6") return chimera::dsp::FilterMode::HighPass6;
+    if (type == "highpass12") return chimera::dsp::FilterMode::HighPass12;
+    if (type == "highpass24") return chimera::dsp::FilterMode::HighPass24;
+    if (type == "highpasswide") return chimera::dsp::FilterMode::HighPassWide;
+    if (type == "bandpass12") return chimera::dsp::FilterMode::BandPass12;
+    if (type == "bandpass24") return chimera::dsp::FilterMode::BandPass24;
+    if (type == "bandpasswide") return chimera::dsp::FilterMode::BandPassWide;
+    if (type == "bandpassnarrow") return chimera::dsp::FilterMode::BandPassNarrow;
+    if (type == "notch") return chimera::dsp::FilterMode::Notch;
+    if (type == "peak") return chimera::dsp::FilterMode::Peak;
+    if (type == "lowshelf") return chimera::dsp::FilterMode::LowShelf;
+    if (type == "highshelf") return chimera::dsp::FilterMode::HighShelf;
+    return chimera::dsp::FilterMode::LowPass12;
+}
 }
 
 ChimeraEngineAudioProcessor::ChimeraEngineAudioProcessor()
@@ -259,7 +283,7 @@ juce::Result ChimeraEngineAudioProcessor::loadPatchFileForPart(int partIndex, co
         if (const auto result = zone->loadAudio(); result.failed())
             return result;
 
-        elements[static_cast<size_t>(count)] = { std::move(zone), element.level, element.pan };
+        elements[static_cast<size_t>(count)] = { std::move(zone), element.level, element.pan, filterModeFromString(element.filterType) };
         elements[static_cast<size_t>(count)].ampAttack = element.ampAttack;
         elements[static_cast<size_t>(count)].ampSustain = element.ampSustain;
         elements[static_cast<size_t>(count)].ampRelease = element.ampRelease;
@@ -423,6 +447,8 @@ void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int partIndex,
         target.players[playerIndex].start(target.note, currentSampleRate);
         target.elementLevels[playerIndex] = element.level;
         target.elementPans[playerIndex] = element.pan;
+        target.elementFilterModes[playerIndex] = element.filterMode;
+        target.filters[playerIndex].setMode(element.filterMode);
         target.ampEnvelopes[playerIndex].setStages(*parameters.getRawParameterValue("attack") + element.ampAttack,
                                                    0.05f,
                                                    0.05f,
@@ -525,6 +551,7 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
             anyEnvelopeActive = anyEnvelopeActive || envelope.isActive();
 
             auto& filter = voice.filters[static_cast<size_t>(i)];
+            filter.setMode(voice.elementFilterModes[static_cast<size_t>(i)]);
             filter.setCutoff(*parameters.getRawParameterValue("cutoff"));
             filter.setResonance(*parameters.getRawParameterValue("resonance"));
 

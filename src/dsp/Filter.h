@@ -4,12 +4,27 @@ namespace chimera::dsp
 {
 enum class FilterMode
 {
+    Bypass,
+    LowPass6,
     LowPass12,
     LowPass24,
-    HighPass,
-    BandPass,
-    Notch
+    LowPassWide,
+    LowPassNarrow,
+    HighPass6,
+    HighPass12,
+    HighPass24,
+    HighPassWide,
+    BandPass12,
+    BandPass24,
+    BandPassWide,
+    BandPassNarrow,
+    Notch,
+    Peak,
+    LowShelf,
+    HighShelf
 };
+
+constexpr int filterModeCount = 18;
 
 class Filter
 {

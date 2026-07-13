@@ -61,6 +61,7 @@ private:
         std::shared_ptr<chimera::dsp::SampleZone> zone;
         float level = 1.0f;
         float pan = 0.0f;
+        chimera::dsp::FilterMode filterMode = chimera::dsp::FilterMode::LowPass12;
         float ampAttack = 0.0f;
         float ampSustain = 1.0f;
         float ampRelease = 0.0f;
@@ -73,6 +74,7 @@ private:
         std::array<chimera::dsp::Envelope, 8> ampEnvelopes;
         std::array<float, 8> elementLevels {};
         std::array<float, 8> elementPans {};
+        std::array<chimera::dsp::FilterMode, 8> elementFilterModes {};
         int elementCount = 0;
         int partIndex = 0;
         int note = -1;
