@@ -5,6 +5,7 @@
 #include "dsp/Filter.h"
 #include "dsp/SamplePlayer.h"
 #include "dsp/SampleZone.h"
+#include <array>
 #include <memory>
 
 class ChimeraEngineAudioProcessor final : public juce::AudioProcessor
@@ -45,17 +46,23 @@ private:
         chimera::dsp::Envelope ampEnvelope;
         chimera::dsp::Filter filter;
         int note = -1;
+        uint64_t age = 0;
         float velocityGain = 0.0f;
         bool active = false;
     };
 
+    static constexpr size_t maxVoices = 16;
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::Result loadDefaultPatch();
     void handleMidiMessage(const juce::MidiMessage& message);
+    ActiveVoice& allocateVoice();
+    void startVoice(ActiveVoice& target, int note, int velocity);
     float renderVoiceSample();
 
     juce::AudioProcessorValueTreeState parameters;
     std::shared_ptr<chimera::dsp::SampleZone> defaultZone;
-    ActiveVoice voice;
+    std::array<ActiveVoice, maxVoices> voices;
     double currentSampleRate = 44100.0;
+    uint64_t voiceAgeCounter = 0;
 };

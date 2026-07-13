@@ -3,6 +3,7 @@
 #include "preset/Preset.h"
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace
 {
@@ -54,11 +55,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChimeraEngineAudioProcessor:
 void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
 {
     currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
-    voice.ampEnvelope.setSampleRate(currentSampleRate);
-    voice.filter.setSampleRate(currentSampleRate);
-    voice.filter.reset();
-    voice.player.stop();
-    voice.active = false;
+    voiceAgeCounter = 0;
+
+    for (auto& voice : voices)
+    {
+        voice.ampEnvelope.setSampleRate(currentSampleRate);
+        voice.filter.setSampleRate(currentSampleRate);
+        voice.filter.reset();
+        voice.player.stop();
+        voice.active = false;
+        voice.note = -1;
+        voice.age = 0;
+    }
+
     ignoreUnused(loadDefaultPatch());
 }
 
@@ -147,7 +156,9 @@ juce::Result ChimeraEngineAudioProcessor::loadDefaultPatch()
         return result;
 
     defaultZone = std::move(zone);
-    voice.player.setZone(defaultZone);
+    for (auto& voice : voices)
+        voice.player.setZone(defaultZone);
+
     return juce::Result::ok();
 }
 
@@ -158,38 +169,70 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
         if (defaultZone == nullptr || !defaultZone->matches(message.getNoteNumber(), message.getVelocity()))
             return;
 
-        voice.note = message.getNoteNumber();
-        voice.velocityGain = std::clamp(message.getFloatVelocity(), 0.0f, 1.0f);
-        voice.ampEnvelope.setStages(*parameters.getRawParameterValue("attack"), 0.05f, 0.05f, 1.0f,
-                                    *parameters.getRawParameterValue("release"), chimera::dsp::Curve::Linear);
-        voice.ampEnvelope.noteOn();
-        voice.player.start(voice.note, currentSampleRate);
-        voice.active = true;
+        startVoice(allocateVoice(), message.getNoteNumber(), message.getVelocity());
         return;
     }
 
-    if (message.isNoteOff() && voice.active && message.getNoteNumber() == voice.note)
-        voice.ampEnvelope.noteOff();
+    if (message.isNoteOff())
+        for (auto& voice : voices)
+            if (voice.active && message.getNoteNumber() == voice.note)
+                voice.ampEnvelope.noteOff();
+}
+
+ChimeraEngineAudioProcessor::ActiveVoice& ChimeraEngineAudioProcessor::allocateVoice()
+{
+    if (auto inactive = std::find_if(voices.begin(), voices.end(), [](const auto& voice) { return !voice.active; });
+        inactive != voices.end())
+        return *inactive;
+
+    return *std::min_element(voices.begin(), voices.end(), [](const auto& a, const auto& b)
+    {
+        return a.age < b.age;
+    });
+}
+
+void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int note, int velocity)
+{
+    target.note = note;
+    target.age = ++voiceAgeCounter;
+    target.velocityGain = std::clamp(static_cast<float>(velocity) / 127.0f, 0.0f, 1.0f);
+    target.ampEnvelope.setSampleRate(currentSampleRate);
+    target.ampEnvelope.setStages(*parameters.getRawParameterValue("attack"), 0.05f, 0.05f, 1.0f,
+                                 *parameters.getRawParameterValue("release"), chimera::dsp::Curve::Linear);
+    target.ampEnvelope.noteOn();
+    target.filter.setSampleRate(currentSampleRate);
+    target.filter.reset();
+    target.player.setZone(defaultZone);
+    target.player.start(target.note, currentSampleRate);
+    target.active = true;
 }
 
 float ChimeraEngineAudioProcessor::renderVoiceSample()
 {
-    if (!voice.active)
-        return 0.0f;
-
-    voice.filter.setCutoff(*parameters.getRawParameterValue("cutoff"));
-    voice.filter.setResonance(*parameters.getRawParameterValue("resonance"));
-
-    const auto envelope = voice.ampEnvelope.process();
-    const auto dry = voice.player.process();
-    const auto filtered = voice.filter.process(dry);
     const auto gain = dbToGain(*parameters.getRawParameterValue("masterGain"));
-    const auto output = filtered * envelope * voice.velocityGain * gain;
+    auto output = 0.0f;
 
-    if (!voice.player.isPlaying() || (!voice.ampEnvelope.isActive() && envelope <= 0.0f))
-        voice.active = false;
+    for (auto& voice : voices)
+    {
+        if (!voice.active)
+            continue;
 
-    return output;
+        voice.filter.setCutoff(*parameters.getRawParameterValue("cutoff"));
+        voice.filter.setResonance(*parameters.getRawParameterValue("resonance"));
+
+        const auto envelope = voice.ampEnvelope.process();
+        const auto dry = voice.player.process();
+        const auto filtered = voice.filter.process(dry);
+        output += filtered * envelope * voice.velocityGain * gain;
+
+        if (!voice.player.isPlaying() || (!voice.ampEnvelope.isActive() && envelope <= 0.0f))
+        {
+            voice.active = false;
+            voice.note = -1;
+        }
+    }
+
+    return std::clamp(output, -1.0f, 1.0f);
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
