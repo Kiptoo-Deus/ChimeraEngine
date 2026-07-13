@@ -93,3 +93,7 @@ add_test(NAME ChimeraEngineSampleLicenseAudit
 
 add_test(NAME ChimeraEnginePresetValidation
          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate_presets.py)
+
+add_test(NAME ChimeraEngineBuildArtifactValidation
+         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate_build_artifacts.py
+                 ${CMAKE_CURRENT_BINARY_DIR})
