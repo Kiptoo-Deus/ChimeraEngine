@@ -256,6 +256,17 @@ juce::String ChimeraEngineAudioProcessor::getPartPatchName(int partIndex) const
     return parts[static_cast<size_t>(partIndex)].patchName;
 }
 
+void ChimeraEngineAudioProcessor::setPerformanceModeEnabled(bool shouldBeEnabled)
+{
+    performanceModeEnabled = shouldBeEnabled;
+}
+
+void ChimeraEngineAudioProcessor::setPerformancePart(int performancePartIndex, chimera::engine::PartZone zone)
+{
+    zone.internalPartIndex = std::clamp(zone.internalPartIndex, 0, static_cast<int>(maxParts) - 1);
+    activePerformance.setPart(performancePartIndex, std::move(zone));
+}
+
 juce::Result ChimeraEngineAudioProcessor::loadPatchFileForPart(int partIndex, const juce::File& patchFile)
 {
     chimera::preset::Patch patch;
@@ -357,20 +368,30 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
         }
 
         const juce::ScopedLock lock(zoneLock);
-        auto hasMatch = false;
-        const auto& part = parts[static_cast<size_t>(partIndex)];
-        if (!part.enabled)
-            return;
+        if (performanceModeEnabled)
+        {
+            for (const auto internalPart : activePerformance.matchingInternalParts(message.getNoteNumber(),
+                                                                                  message.getVelocity(),
+                                                                                  message.getChannel()))
+                startVoice(allocateVoice(), internalPart, message.getNoteNumber(), message.getVelocity());
+        }
+        else
+        {
+            auto hasMatch = false;
+            const auto& part = parts[static_cast<size_t>(partIndex)];
+            if (!part.enabled)
+                return;
 
-        for (int i = 0; i < part.loadedElementCount; ++i)
-            if (part.loadedElements[static_cast<size_t>(i)].zone != nullptr
-                && part.loadedElements[static_cast<size_t>(i)].zone->matches(message.getNoteNumber(), message.getVelocity()))
-                hasMatch = true;
+            for (int i = 0; i < part.loadedElementCount; ++i)
+                if (part.loadedElements[static_cast<size_t>(i)].zone != nullptr
+                    && part.loadedElements[static_cast<size_t>(i)].zone->matches(message.getNoteNumber(), message.getVelocity()))
+                    hasMatch = true;
 
-        if (!hasMatch)
-            return;
+            if (!hasMatch)
+                return;
 
-        startVoice(allocateVoice(), partIndex, message.getNoteNumber(), message.getVelocity());
+            startVoice(allocateVoice(), partIndex, message.getNoteNumber(), message.getVelocity());
+        }
         return;
     }
 
@@ -395,10 +416,30 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
             return;
         }
 
-        for (auto& voice : voices)
-            if (voice.active && voice.partIndex == partIndex && message.getNoteNumber() == voice.note)
-                for (auto& envelope : voice.ampEnvelopes)
-                    envelope.noteOff();
+        if (performanceModeEnabled)
+        {
+            for (int performancePart = 0; performancePart < chimera::engine::Performance::partCount; ++performancePart)
+            {
+                const auto& zone = activePerformance.getPart(performancePart);
+                if (!zone.enabled
+                    || zone.midiChannel != message.getChannel()
+                    || message.getNoteNumber() < zone.keyLow
+                    || message.getNoteNumber() > zone.keyHigh)
+                    continue;
+
+                for (auto& voice : voices)
+                    if (voice.active && voice.partIndex == zone.internalPartIndex && message.getNoteNumber() == voice.note)
+                        for (auto& envelope : voice.ampEnvelopes)
+                            envelope.noteOff();
+            }
+        }
+        else
+        {
+            for (auto& voice : voices)
+                if (voice.active && voice.partIndex == partIndex && message.getNoteNumber() == voice.note)
+                    for (auto& envelope : voice.ampEnvelopes)
+                        envelope.noteOff();
+        }
     }
 }
 

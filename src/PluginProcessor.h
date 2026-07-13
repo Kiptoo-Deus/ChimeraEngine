@@ -6,6 +6,7 @@
 #include "dsp/SamplePlayer.h"
 #include "dsp/SampleZone.h"
 #include "engine/Arpeggiator.h"
+#include "engine/Performance.h"
 #include <array>
 #include <memory>
 #include <vector>
@@ -46,6 +47,9 @@ public:
     juce::Result loadSynthPresetForPart(int partIndex, const juce::String& presetName);
     juce::String getCurrentPatchName() const { return currentPatchName; }
     juce::String getPartPatchName(int partIndex) const;
+    void setPerformanceModeEnabled(bool shouldBeEnabled);
+    bool isPerformanceModeEnabled() const { return performanceModeEnabled; }
+    void setPerformancePart(int performancePartIndex, chimera::engine::PartZone zone);
     static constexpr int getPartCount() { return static_cast<int>(maxParts); }
     static constexpr int getMaxVoiceCount() { return static_cast<int>(maxVoices); }
 
@@ -131,6 +135,7 @@ private:
     juce::String currentPatchName { "Sine" };
     std::array<ActiveVoice, maxVoices> voices;
     chimera::engine::Arpeggiator arpeggiator;
+    chimera::engine::Performance activePerformance;
     std::vector<HeldArpeggiatorNote> heldArpeggiatorNotes;
     std::vector<ActiveArpeggiatorNote> activeArpeggiatorNotes;
     int arpeggiatorPartIndex = 0;
@@ -139,4 +144,5 @@ private:
     int arpeggiatorSamplesUntilStep = 0;
     int arpeggiatorSamplesUntilGate = 0;
     bool arpeggiatorWasEnabled = false;
+    bool performanceModeEnabled = false;
 };

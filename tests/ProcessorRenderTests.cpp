@@ -140,6 +140,23 @@ int main()
     multiPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
     assert(renderAndSum(multiPartProcessor, multiPartMidi, 512) > 0.01f);
 
+    ChimeraEngineAudioProcessor performanceProcessor;
+    performanceProcessor.prepareToPlay(48000.0, 512);
+    assert(performanceProcessor.loadSynthPresetForPart(0, "Stack").wasOk());
+    assert(performanceProcessor.loadSynthPresetForPart(1, "Velocity Split").wasOk());
+    performanceProcessor.setPerformancePart(0, { 0, 59, 1, 127, 1, true, 0, 1.0f, -0.2f, "Lower" });
+    performanceProcessor.setPerformancePart(1, { 60, 127, 1, 127, 1, true, 1, 0.9f, 0.2f, "Upper" });
+    performanceProcessor.setPerformanceModeEnabled(true);
+    assert(performanceProcessor.isPerformanceModeEnabled());
+
+    juce::MidiBuffer lowerPerformanceMidi;
+    lowerPerformanceMidi.addEvent(juce::MidiMessage::noteOn(1, 48, juce::uint8(100)), 0);
+    assert(renderAndSum(performanceProcessor, lowerPerformanceMidi, 512) > 0.01f);
+
+    juce::MidiBuffer upperPerformanceMidi;
+    upperPerformanceMidi.addEvent(juce::MidiMessage::noteOn(1, 72, juce::uint8(120)), 0);
+    assert(renderAndSum(performanceProcessor, upperPerformanceMidi, 512) > 0.01f);
+
     std::cout << "Processor render test passed\n";
     return 0;
 }

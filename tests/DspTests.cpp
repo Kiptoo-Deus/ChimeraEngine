@@ -199,6 +199,22 @@ void testPerformance()
     assert(performance.partMatches(0, 60, 64, 1));
     assert(!performance.partMatches(0, 80, 64, 1));
     assert(!performance.partMatches(0, 60, 64, 2));
+
+    performance.setPart(1, { 60, 84, 1, 127, 1, true, 3 });
+    const auto matches = performance.matchingInternalParts(64, 100, 1);
+    assert(matches.size() == 2);
+    assert(matches[0] == 0);
+    assert(matches[1] == 3);
+
+    chimera::engine::PerformanceBank bank;
+    assert(bank.size() == 512);
+    chimera::engine::PerformanceSlot slot;
+    slot.name = "Layered Split";
+    slot.parts[0] = { 0, 59, 1, 127, 1, true, 0, 1.0f, -0.1f, "Left" };
+    slot.parts[1] = { 60, 127, 1, 127, 1, true, 1, 0.8f, 0.1f, "Right" };
+    bank.setPerformance(511, slot);
+    assert(bank.getPerformance(511).name == "Layered Split");
+    assert(bank.getPerformance(999).name == "Init Performance");
 }
 
 void testFxProcessors()
