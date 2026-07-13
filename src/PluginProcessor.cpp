@@ -30,6 +30,11 @@ std::pair<float, float> panGains(float pan)
     return { clamped <= 0.0f ? 1.0f : 1.0f - clamped,
              clamped >= 0.0f ? 1.0f : 1.0f + clamped };
 }
+
+int arpeggiatorStepSamples(double sampleRate)
+{
+    return std::max(1, static_cast<int>(std::round(sampleRate * 0.125)));
+}
 }
 
 ChimeraEngineAudioProcessor::ChimeraEngineAudioProcessor()
@@ -63,6 +68,12 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
 {
     currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
     voiceAgeCounter = 0;
+    arpeggiatorSamplesUntilStep = 0;
+    arpeggiatorSamplesUntilGate = 0;
+    arpeggiatorWasEnabled = false;
+    heldArpeggiatorNotes.clear();
+    activeArpeggiatorNotes.clear();
+    arpeggiator.setMode(chimera::engine::ArpMode::Up);
 
     for (auto& voice : voices)
     {
@@ -111,11 +122,25 @@ void ChimeraEngineAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
+        const auto arpeggiatorEnabled = *parameters.getRawParameterValue("arpEnabled") > 0.5f;
+        if (!arpeggiatorEnabled && arpeggiatorWasEnabled)
+        {
+            stopActiveArpeggiatorNotes();
+            heldArpeggiatorNotes.clear();
+            refreshArpeggiatorHeldNotes();
+            arpeggiatorSamplesUntilStep = 0;
+            arpeggiatorSamplesUntilGate = 0;
+        }
+        arpeggiatorWasEnabled = arpeggiatorEnabled;
+
         while (midiIterator != midiEnd && (*midiIterator).samplePosition <= sample)
         {
             handleMidiMessage((*midiIterator).getMessage());
             ++midiIterator;
         }
+
+        if (arpeggiatorEnabled)
+            advanceArpeggiator();
 
         const auto rendered = renderVoiceSample();
         if (buffer.getNumChannels() == 1)
@@ -251,8 +276,27 @@ void ChimeraEngineAudioProcessor::setActiveElements(std::array<LoadedElement, ma
 
 void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& message)
 {
+    const auto arpeggiatorEnabled = *parameters.getRawParameterValue("arpEnabled") > 0.5f;
+
     if (message.isNoteOn())
     {
+        if (arpeggiatorEnabled)
+        {
+            const auto note = message.getNoteNumber();
+            const auto velocity = std::clamp(static_cast<int>(message.getVelocity()), 1, 127);
+            if (auto existing = std::find_if(heldArpeggiatorNotes.begin(), heldArpeggiatorNotes.end(),
+                                             [note](const auto& held) { return held.first == note; });
+                existing != heldArpeggiatorNotes.end())
+                existing->second = velocity;
+            else
+                heldArpeggiatorNotes.emplace_back(note, velocity);
+
+            refreshArpeggiatorHeldNotes();
+            if (activeArpeggiatorNotes.empty())
+                arpeggiatorSamplesUntilStep = 0;
+            return;
+        }
+
         const juce::ScopedLock lock(zoneLock);
         auto hasMatch = false;
         for (int i = 0; i < loadedElementCount; ++i)
@@ -268,10 +312,28 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
     }
 
     if (message.isNoteOff())
+    {
+        if (arpeggiatorEnabled)
+        {
+            const auto note = message.getNoteNumber();
+            heldArpeggiatorNotes.erase(std::remove_if(heldArpeggiatorNotes.begin(), heldArpeggiatorNotes.end(),
+                                                      [note](const auto& held) { return held.first == note; }),
+                                       heldArpeggiatorNotes.end());
+            refreshArpeggiatorHeldNotes();
+            if (heldArpeggiatorNotes.empty())
+            {
+                stopActiveArpeggiatorNotes();
+                arpeggiatorSamplesUntilStep = 0;
+                arpeggiatorSamplesUntilGate = 0;
+            }
+            return;
+        }
+
         for (auto& voice : voices)
             if (voice.active && message.getNoteNumber() == voice.note)
                 for (auto& envelope : voice.ampEnvelopes)
                     envelope.noteOff();
+    }
 }
 
 ChimeraEngineAudioProcessor::ActiveVoice& ChimeraEngineAudioProcessor::allocateVoice()
@@ -328,6 +390,69 @@ void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int note, int 
     }
 
     target.active = true;
+}
+
+void ChimeraEngineAudioProcessor::advanceArpeggiator()
+{
+    if (heldArpeggiatorNotes.empty())
+        return;
+
+    if (arpeggiatorSamplesUntilGate > 0)
+    {
+        --arpeggiatorSamplesUntilGate;
+        if (arpeggiatorSamplesUntilGate == 0)
+            stopActiveArpeggiatorNotes();
+    }
+
+    if (arpeggiatorSamplesUntilStep > 0)
+    {
+        --arpeggiatorSamplesUntilStep;
+        return;
+    }
+
+    stopActiveArpeggiatorNotes();
+
+    const auto nextNotes = arpeggiator.tick();
+    for (const auto note : nextNotes)
+    {
+        const auto velocity = [this, note]
+        {
+            if (auto held = std::find_if(heldArpeggiatorNotes.begin(), heldArpeggiatorNotes.end(),
+                                         [note](const auto& candidate) { return candidate.first == note; });
+                held != heldArpeggiatorNotes.end())
+                return held->second;
+
+            return 100;
+        }();
+
+        startVoice(allocateVoice(), note, velocity);
+        activeArpeggiatorNotes.push_back(note);
+    }
+
+    const auto stepSamples = arpeggiatorStepSamples(currentSampleRate);
+    arpeggiatorSamplesUntilStep = stepSamples;
+    arpeggiatorSamplesUntilGate = std::max(1, static_cast<int>(std::round(stepSamples * *parameters.getRawParameterValue("arpGate"))));
+}
+
+void ChimeraEngineAudioProcessor::refreshArpeggiatorHeldNotes()
+{
+    std::vector<int> notes;
+    notes.reserve(heldArpeggiatorNotes.size());
+    for (const auto& held : heldArpeggiatorNotes)
+        notes.push_back(held.first);
+
+    arpeggiator.setHeldNotes(std::move(notes));
+}
+
+void ChimeraEngineAudioProcessor::stopActiveArpeggiatorNotes()
+{
+    for (const auto note : activeArpeggiatorNotes)
+        for (auto& voice : voices)
+            if (voice.active && voice.note == note)
+                for (auto& envelope : voice.ampEnvelopes)
+                    envelope.noteOff();
+
+    activeArpeggiatorNotes.clear();
 }
 
 ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoiceSample()

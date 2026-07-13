@@ -5,8 +5,10 @@
 #include "dsp/Filter.h"
 #include "dsp/SamplePlayer.h"
 #include "dsp/SampleZone.h"
+#include "engine/Arpeggiator.h"
 #include <array>
 #include <memory>
+#include <vector>
 
 class ChimeraEngineAudioProcessor final : public juce::AudioProcessor
 {
@@ -84,6 +86,9 @@ private:
     void handleMidiMessage(const juce::MidiMessage& message);
     ActiveVoice& allocateVoice();
     void startVoice(ActiveVoice& target, int note, int velocity);
+    void advanceArpeggiator();
+    void refreshArpeggiatorHeldNotes();
+    void stopActiveArpeggiatorNotes();
     StereoSample renderVoiceSample();
 
     juce::AudioProcessorValueTreeState parameters;
@@ -94,6 +99,12 @@ private:
     int loadedElementCount = 0;
     juce::String currentPatchName { "Sine" };
     std::array<ActiveVoice, maxVoices> voices;
+    chimera::engine::Arpeggiator arpeggiator;
+    std::vector<std::pair<int, int>> heldArpeggiatorNotes;
+    std::vector<int> activeArpeggiatorNotes;
     double currentSampleRate = 44100.0;
     uint64_t voiceAgeCounter = 0;
+    int arpeggiatorSamplesUntilStep = 0;
+    int arpeggiatorSamplesUntilGate = 0;
+    bool arpeggiatorWasEnabled = false;
 };

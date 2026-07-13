@@ -112,6 +112,23 @@ int main()
     assert(left > 0.01f && right > 0.01f);
     assert(std::abs(left - right) > 0.001f);
 
+    ChimeraEngineAudioProcessor arpProcessor;
+    arpProcessor.prepareToPlay(48000.0, 512);
+    arpProcessor.getParameters().getParameter("arpEnabled")->setValueNotifyingHost(1.0f);
+    juce::MidiBuffer arpChord;
+    arpChord.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    arpChord.addEvent(juce::MidiMessage::noteOn(1, 64, juce::uint8(100)), 0);
+    arpChord.addEvent(juce::MidiMessage::noteOn(1, 67, juce::uint8(100)), 0);
+    assert(renderAndSum(arpProcessor, arpChord, 512) > 0.01f);
+
+    auto arpContinuationSum = 0.0f;
+    for (int block = 0; block < 16; ++block)
+    {
+        juce::MidiBuffer noEvents;
+        arpContinuationSum += renderAndSum(arpProcessor, noEvents, 512);
+    }
+    assert(arpContinuationSum > 0.01f);
+
     std::cout << "Processor render test passed\n";
     return 0;
 }
