@@ -6,17 +6,26 @@
 
 namespace
 {
-float renderAndSum(ChimeraEngineAudioProcessor& processor, juce::MidiBuffer& midi, int samples)
+std::pair<float, float> renderAndChannelSums(ChimeraEngineAudioProcessor& processor, juce::MidiBuffer& midi, int samples)
 {
     juce::AudioBuffer<float> buffer(2, samples);
     processor.processBlock(buffer, midi);
 
-    auto sum = 0.0f;
-    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
-        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-            sum += std::abs(buffer.getSample(channel, sample));
+    auto left = 0.0f;
+    auto right = 0.0f;
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        left += std::abs(buffer.getSample(0, sample));
+        right += std::abs(buffer.getSample(1, sample));
+    }
 
-    return sum;
+    return { left, right };
+}
+
+float renderAndSum(ChimeraEngineAudioProcessor& processor, juce::MidiBuffer& midi, int samples)
+{
+    const auto [left, right] = renderAndChannelSums(processor, midi, samples);
+    return left + right;
 }
 }
 
@@ -69,6 +78,15 @@ int main()
     juce::MidiBuffer stackMidi;
     stackMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
     assert(renderAndSum(presetProcessor, stackMidi, 512) > 0.01f);
+
+    ChimeraEngineAudioProcessor stereoProcessor;
+    stereoProcessor.prepareToPlay(48000.0, 512);
+    assert(stereoProcessor.loadSynthPreset("Stack").wasOk());
+    juce::MidiBuffer stereoMidi;
+    stereoMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    const auto [left, right] = renderAndChannelSums(stereoProcessor, stereoMidi, 512);
+    assert(left > 0.01f && right > 0.01f);
+    assert(std::abs(left - right) > 0.001f);
 
     std::cout << "Processor render test passed\n";
     return 0;

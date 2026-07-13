@@ -44,6 +44,12 @@ public:
     juce::String getCurrentPatchName() const { return currentPatchName; }
 
 private:
+    struct StereoSample
+    {
+        float left = 0.0f;
+        float right = 0.0f;
+    };
+
     struct LoadedElement
     {
         std::shared_ptr<chimera::dsp::SampleZone> zone;
@@ -54,10 +60,10 @@ private:
     struct ActiveVoice
     {
         std::array<chimera::dsp::SamplePlayer, 8> players;
+        std::array<chimera::dsp::Filter, 8> filters;
         std::array<float, 8> elementLevels {};
         std::array<float, 8> elementPans {};
         chimera::dsp::Envelope ampEnvelope;
-        chimera::dsp::Filter filter;
         int elementCount = 0;
         int note = -1;
         uint64_t age = 0;
@@ -75,7 +81,7 @@ private:
     void handleMidiMessage(const juce::MidiMessage& message);
     ActiveVoice& allocateVoice();
     void startVoice(ActiveVoice& target, int note, int velocity);
-    float renderVoiceSample();
+    StereoSample renderVoiceSample();
 
     juce::AudioProcessorValueTreeState parameters;
     juce::CriticalSection pendingMidiLock;
