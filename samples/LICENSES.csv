@@ -1,1 +1,5 @@
 filename,source_url,license,attribution_required,attribution_text
+Synth/saw_C4_24bit.wav,generated://chimera-engine/scripts/generate_synth_samples.py,CC0,false,
+Synth/sine_C4_24bit.wav,generated://chimera-engine/scripts/generate_synth_samples.py,CC0,false,
+Synth/square_C4_24bit.wav,generated://chimera-engine/scripts/generate_synth_samples.py,CC0,false,
+Synth/triangle_C4_24bit.wav,generated://chimera-engine/scripts/generate_synth_samples.py,CC0,false,

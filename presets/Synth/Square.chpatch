@@ -1,0 +1,14 @@
+{
+  "format": "chpatch",
+  "version": 1,
+  "name": "Square",
+  "category": "Synth",
+  "elements": [
+    {
+      "sample": "samples/Synth/square_C4_24bit.wav",
+      "rootKey": 60,
+      "keyRange": [0, 127],
+      "velocityRange": [1, 127]
+    }
+  ]
+}

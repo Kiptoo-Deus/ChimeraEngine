@@ -1,0 +1,14 @@
+{
+  "format": "chpatch",
+  "version": 1,
+  "name": "Saw",
+  "category": "Synth",
+  "elements": [
+    {
+      "sample": "samples/Synth/saw_C4_24bit.wav",
+      "rootKey": 60,
+      "keyRange": [0, 127],
+      "velocityRange": [1, 127]
+    }
+  ]
+}

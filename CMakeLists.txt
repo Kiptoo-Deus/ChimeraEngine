@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
 FetchContent_Declare(
     juce
@@ -84,3 +85,6 @@ add_executable(ChimeraEngineTests
 target_include_directories(ChimeraEngineTests PRIVATE src)
 target_link_libraries(ChimeraEngineTests PRIVATE juce::juce_audio_basics juce::juce_core)
 add_test(NAME ChimeraEngineDspTests COMMAND ChimeraEngineTests)
+
+add_test(NAME ChimeraEngineSampleLicenseAudit
+         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/audit_sample_licenses.py)
