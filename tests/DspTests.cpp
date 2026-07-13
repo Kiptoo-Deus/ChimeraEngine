@@ -1,7 +1,11 @@
 #include "dsp/Envelope.h"
+#include "dsp/Element.h"
 #include "dsp/Filter.h"
 #include "dsp/Lfo.h"
+#include "dsp/ModulationMatrix.h"
 #include "dsp/SampleZone.h"
+#include "engine/Arpeggiator.h"
+#include "engine/Performance.h"
 #include "engine/VoiceAllocator.h"
 
 #include <cassert>
@@ -77,6 +81,49 @@ void testFilterStability()
         assert(std::isfinite(value));
     }
 }
+
+void testModulationMatrix()
+{
+    chimera::dsp::ModulationMatrix matrix;
+    matrix.setFreeSlot(0, { chimera::dsp::ModSource::Aftertouch, chimera::dsp::ModDestination::Cutoff, 0.5f, true });
+    const auto mods = matrix.evaluate(0.5f, 0.0f, 0.25f, 1.0f, 0.0f, 0.0f, 0.5f);
+    assert(mods[1] > 0.6f);
+    assert(mods[2] > 0.49f && mods[2] < 0.51f);
+}
+
+void testElement()
+{
+    auto zone = std::make_shared<chimera::dsp::SampleZone>();
+    zone->setKeyRange(60, 72);
+    chimera::dsp::Element element;
+    element.setSampleRate(48000.0);
+    element.setZone(zone);
+    assert(element.canPlay(64, 100));
+    assert(!element.canPlay(50, 100));
+    element.noteOn(64, 100);
+    const auto out = element.process(0.25f);
+    assert(std::isfinite(out));
+}
+
+void testArpeggiator()
+{
+    chimera::engine::Arpeggiator arp;
+    arp.setMode(chimera::engine::ArpMode::UpDown);
+    arp.setHeldNotes({ 67, 60, 64 });
+    assert(arp.tick()[0] == 60);
+    assert(arp.tick()[0] == 64);
+    assert(arp.tick()[0] == 67);
+    assert(arp.tick()[0] == 64);
+}
+
+void testPerformance()
+{
+    chimera::engine::Performance performance;
+    performance.setPart(0, { 48, 72, 1, 127, 1, true });
+    assert(performance.partMatches(0, 60, 64, 1));
+    assert(!performance.partMatches(0, 80, 64, 1));
+    assert(!performance.partMatches(0, 60, 64, 2));
+}
 }
 
 int main()
@@ -86,6 +133,10 @@ int main()
     testSampleZone();
     testVoiceAllocator();
     testFilterStability();
+    testModulationMatrix();
+    testElement();
+    testArpeggiator();
+    testPerformance();
     std::cout << "DSP tests passed\n";
     return 0;
 }

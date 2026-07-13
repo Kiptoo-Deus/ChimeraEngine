@@ -35,9 +35,13 @@ target_sources(ChimeraEngine PRIVATE
     src/PluginEditor.cpp
     src/PluginProcessor.cpp
     src/dsp/Envelope.cpp
+    src/dsp/Element.cpp
     src/dsp/Filter.cpp
     src/dsp/Lfo.cpp
+    src/dsp/ModulationMatrix.cpp
     src/dsp/SampleZone.cpp
+    src/engine/Arpeggiator.cpp
+    src/engine/Performance.cpp
     src/engine/VoiceAllocator.cpp
     src/fx/FxChain.cpp
     src/gui/LookAndFeel.cpp
@@ -67,9 +71,13 @@ enable_testing()
 add_executable(ChimeraEngineTests
     tests/DspTests.cpp
     src/dsp/Envelope.cpp
+    src/dsp/Element.cpp
     src/dsp/Filter.cpp
     src/dsp/Lfo.cpp
+    src/dsp/ModulationMatrix.cpp
     src/dsp/SampleZone.cpp
+    src/engine/Arpeggiator.cpp
+    src/engine/Performance.cpp
     src/engine/VoiceAllocator.cpp
 )
 
