@@ -1,4 +1,4 @@
-# Chimera Engine
+# Chimera Engine inspired from my favorite boards Yamaha MOX/MOXF and Motif
 
 Chimera Engine is an original element-based sample instrument plugin built with JUCE and CMake.
 
@@ -35,4 +35,4 @@ Allowed licenses for bundled audio are CC0, public domain, and CC-BY with attrib
 
 ## Current Status
 
-Phase 1 repository setup is in place: CMake/JUCE wiring, source layout, CI, sample license audit tooling, and starter DSP unit tests. The instrument is not yet a complete production release.
+The instrument is not yet a complete production release.
