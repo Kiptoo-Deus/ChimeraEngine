@@ -31,6 +31,9 @@ float renderAndSum(ChimeraEngineAudioProcessor& processor, juce::MidiBuffer& mid
 
 int main()
 {
+    static_assert(ChimeraEngineAudioProcessor::getPartCount() == 16);
+    static_assert(ChimeraEngineAudioProcessor::getMaxVoiceCount() == 128);
+
     ChimeraEngineAudioProcessor processor;
     processor.prepareToPlay(48000.0, 512);
 
@@ -128,6 +131,14 @@ int main()
         arpContinuationSum += renderAndSum(arpProcessor, noEvents, 512);
     }
     assert(arpContinuationSum > 0.01f);
+
+    ChimeraEngineAudioProcessor multiPartProcessor;
+    multiPartProcessor.prepareToPlay(48000.0, 512);
+    assert(multiPartProcessor.loadSynthPresetForPart(1, "Stack").wasOk());
+    assert(multiPartProcessor.getPartPatchName(1) == "Stack");
+    juce::MidiBuffer multiPartMidi;
+    multiPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
+    assert(renderAndSum(multiPartProcessor, multiPartMidi, 512) > 0.01f);
 
     std::cout << "Processor render test passed\n";
     return 0;

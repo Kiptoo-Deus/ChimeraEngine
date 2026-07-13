@@ -47,7 +47,7 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     patchDisplay.setFont(juce::FontOptions(24.0f, juce::Font::bold));
     addAndMakeVisible(patchDisplay);
 
-    categoryDisplay.setText("VOICE  |  SYNTH  |  16 VOICES  |  8 ELEMENTS", juce::dontSendNotification);
+    categoryDisplay.setText("VOICE  |  16 PARTS  |  128 VOICES  |  8 ELEMENTS", juce::dontSendNotification);
     categoryDisplay.setJustificationType(juce::Justification::centredLeft);
     categoryDisplay.setColour(juce::Label::textColourId, juce::Colour(0xffd8f7f1));
     addAndMakeVisible(categoryDisplay);

@@ -43,7 +43,11 @@ public:
     void enqueuePreviewNoteOn(int midiChannel, int midiNote, float velocity);
     void enqueuePreviewNoteOff(int midiChannel, int midiNote);
     juce::Result loadSynthPreset(const juce::String& presetName);
+    juce::Result loadSynthPresetForPart(int partIndex, const juce::String& presetName);
     juce::String getCurrentPatchName() const { return currentPatchName; }
+    juce::String getPartPatchName(int partIndex) const;
+    static constexpr int getPartCount() { return static_cast<int>(maxParts); }
+    static constexpr int getMaxVoiceCount() { return static_cast<int>(maxVoices); }
 
 private:
     struct StereoSample
@@ -70,22 +74,48 @@ private:
         std::array<float, 8> elementLevels {};
         std::array<float, 8> elementPans {};
         int elementCount = 0;
+        int partIndex = 0;
         int note = -1;
         uint64_t age = 0;
         float velocityGain = 0.0f;
         bool active = false;
     };
 
-    static constexpr size_t maxVoices = 16;
+    struct PartState
+    {
+        std::array<LoadedElement, 8> loadedElements;
+        int loadedElementCount = 0;
+        juce::String patchName { "Sine" };
+        float level = 1.0f;
+        float pan = 0.0f;
+        bool enabled = true;
+    };
+
+    struct HeldArpeggiatorNote
+    {
+        int partIndex = 0;
+        int note = 0;
+        int velocity = 100;
+    };
+
+    struct ActiveArpeggiatorNote
+    {
+        int partIndex = 0;
+        int note = 0;
+    };
+
+    static constexpr size_t maxParts = 16;
+    static constexpr size_t maxVoices = 128;
     static constexpr size_t maxElements = 8;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::Result loadDefaultPatch();
-    juce::Result loadPatchFile(const juce::File& patchFile);
-    void setActiveElements(std::array<LoadedElement, maxElements> elements, int count, const juce::String& patchName);
+    juce::Result loadPatchFileForPart(int partIndex, const juce::File& patchFile);
+    void setActiveElementsForPart(int partIndex, std::array<LoadedElement, maxElements> elements, int count,
+                                  const juce::String& patchName);
     void handleMidiMessage(const juce::MidiMessage& message);
     ActiveVoice& allocateVoice();
-    void startVoice(ActiveVoice& target, int note, int velocity);
+    void startVoice(ActiveVoice& target, int partIndex, int note, int velocity);
     void advanceArpeggiator();
     void refreshArpeggiatorHeldNotes();
     void stopActiveArpeggiatorNotes();
@@ -95,13 +125,13 @@ private:
     juce::CriticalSection pendingMidiLock;
     juce::MidiBuffer pendingPreviewMidi;
     juce::CriticalSection zoneLock;
-    std::array<LoadedElement, maxElements> loadedElements;
-    int loadedElementCount = 0;
+    std::array<PartState, maxParts> parts;
     juce::String currentPatchName { "Sine" };
     std::array<ActiveVoice, maxVoices> voices;
     chimera::engine::Arpeggiator arpeggiator;
-    std::vector<std::pair<int, int>> heldArpeggiatorNotes;
-    std::vector<int> activeArpeggiatorNotes;
+    std::vector<HeldArpeggiatorNote> heldArpeggiatorNotes;
+    std::vector<ActiveArpeggiatorNote> activeArpeggiatorNotes;
+    int arpeggiatorPartIndex = 0;
     double currentSampleRate = 44100.0;
     uint64_t voiceAgeCounter = 0;
     int arpeggiatorSamplesUntilStep = 0;

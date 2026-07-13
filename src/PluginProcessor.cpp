@@ -90,6 +90,7 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
         voice.note = -1;
         voice.age = 0;
         voice.elementCount = 0;
+        voice.partIndex = 0;
     }
 
     ignoreUnused(loadDefaultPatch());
@@ -200,18 +201,38 @@ void ChimeraEngineAudioProcessor::enqueuePreviewNoteOff(int midiChannel, int mid
 juce::Result ChimeraEngineAudioProcessor::loadDefaultPatch()
 {
     const auto root = projectRoot();
-    return loadPatchFile(root.getChildFile("presets/Synth/Sine.chpatch"));
+    const auto patchFile = root.getChildFile("presets/Synth/Sine.chpatch");
+    for (int part = 0; part < static_cast<int>(maxParts); ++part)
+        if (const auto result = loadPatchFileForPart(part, patchFile); result.failed())
+            return result;
+
+    return juce::Result::ok();
 }
 
 juce::Result ChimeraEngineAudioProcessor::loadSynthPreset(const juce::String& presetName)
 {
-    if (!presetName.containsOnly("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 _-"))
-        return juce::Result::fail("Preset name contains unsupported characters");
-
-    return loadPatchFile(projectRoot().getChildFile("presets/Synth").getChildFile(presetName + ".chpatch"));
+    return loadSynthPresetForPart(0, presetName);
 }
 
-juce::Result ChimeraEngineAudioProcessor::loadPatchFile(const juce::File& patchFile)
+juce::Result ChimeraEngineAudioProcessor::loadSynthPresetForPart(int partIndex, const juce::String& presetName)
+{
+    if (!presetName.containsOnly("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 _-"))
+        return juce::Result::fail("Preset name contains unsupported characters");
+    if (partIndex < 0 || partIndex >= static_cast<int>(maxParts))
+        return juce::Result::fail("Part index is out of range");
+
+    return loadPatchFileForPart(partIndex, projectRoot().getChildFile("presets/Synth").getChildFile(presetName + ".chpatch"));
+}
+
+juce::String ChimeraEngineAudioProcessor::getPartPatchName(int partIndex) const
+{
+    if (partIndex < 0 || partIndex >= static_cast<int>(maxParts))
+        return {};
+
+    return parts[static_cast<size_t>(partIndex)].patchName;
+}
+
+juce::Result ChimeraEngineAudioProcessor::loadPatchFileForPart(int partIndex, const juce::File& patchFile)
 {
     chimera::preset::Patch patch;
     if (const auto result = chimera::preset::loadPatch(patchFile, patch); result.failed())
@@ -248,20 +269,29 @@ juce::Result ChimeraEngineAudioProcessor::loadPatchFile(const juce::File& patchF
     if (count <= 0)
         return juce::Result::fail("Patch contains no loadable elements");
 
-    setActiveElements(std::move(elements), count, patch.metadata.name);
+    setActiveElementsForPart(partIndex, std::move(elements), count, patch.metadata.name);
     return juce::Result::ok();
 }
 
-void ChimeraEngineAudioProcessor::setActiveElements(std::array<LoadedElement, maxElements> elements, int count,
-                                                    const juce::String& patchName)
+void ChimeraEngineAudioProcessor::setActiveElementsForPart(int partIndex, std::array<LoadedElement, maxElements> elements,
+                                                           int count, const juce::String& patchName)
 {
+    if (partIndex < 0 || partIndex >= static_cast<int>(maxParts))
+        return;
+
     const juce::ScopedLock lock(zoneLock);
-    loadedElements = std::move(elements);
-    loadedElementCount = std::clamp(count, 0, static_cast<int>(maxElements));
-    currentPatchName = patchName;
+    auto& part = parts[static_cast<size_t>(partIndex)];
+    part.loadedElements = std::move(elements);
+    part.loadedElementCount = std::clamp(count, 0, static_cast<int>(maxElements));
+    part.patchName = patchName;
+    if (partIndex == 0)
+        currentPatchName = patchName;
 
     for (auto& voice : voices)
     {
+        if (voice.partIndex != partIndex)
+            continue;
+
         voice.active = false;
         voice.note = -1;
         for (auto& envelope : voice.ampEnvelopes)
@@ -277,6 +307,7 @@ void ChimeraEngineAudioProcessor::setActiveElements(std::array<LoadedElement, ma
 void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& message)
 {
     const auto arpeggiatorEnabled = *parameters.getRawParameterValue("arpEnabled") > 0.5f;
+    const auto partIndex = std::clamp(message.getChannel() - 1, 0, static_cast<int>(maxParts) - 1);
 
     if (message.isNoteOn())
     {
@@ -285,12 +316,16 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
             const auto note = message.getNoteNumber();
             const auto velocity = std::clamp(static_cast<int>(message.getVelocity()), 1, 127);
             if (auto existing = std::find_if(heldArpeggiatorNotes.begin(), heldArpeggiatorNotes.end(),
-                                             [note](const auto& held) { return held.first == note; });
+                                             [partIndex, note](const auto& held)
+                                             {
+                                                 return held.partIndex == partIndex && held.note == note;
+                                             });
                 existing != heldArpeggiatorNotes.end())
-                existing->second = velocity;
+                existing->velocity = velocity;
             else
-                heldArpeggiatorNotes.emplace_back(note, velocity);
+                heldArpeggiatorNotes.push_back({ partIndex, note, velocity });
 
+            arpeggiatorPartIndex = partIndex;
             refreshArpeggiatorHeldNotes();
             if (activeArpeggiatorNotes.empty())
                 arpeggiatorSamplesUntilStep = 0;
@@ -299,15 +334,19 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
 
         const juce::ScopedLock lock(zoneLock);
         auto hasMatch = false;
-        for (int i = 0; i < loadedElementCount; ++i)
-            if (loadedElements[static_cast<size_t>(i)].zone != nullptr
-                && loadedElements[static_cast<size_t>(i)].zone->matches(message.getNoteNumber(), message.getVelocity()))
+        const auto& part = parts[static_cast<size_t>(partIndex)];
+        if (!part.enabled)
+            return;
+
+        for (int i = 0; i < part.loadedElementCount; ++i)
+            if (part.loadedElements[static_cast<size_t>(i)].zone != nullptr
+                && part.loadedElements[static_cast<size_t>(i)].zone->matches(message.getNoteNumber(), message.getVelocity()))
                 hasMatch = true;
 
         if (!hasMatch)
             return;
 
-        startVoice(allocateVoice(), message.getNoteNumber(), message.getVelocity());
+        startVoice(allocateVoice(), partIndex, message.getNoteNumber(), message.getVelocity());
         return;
     }
 
@@ -317,7 +356,10 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
         {
             const auto note = message.getNoteNumber();
             heldArpeggiatorNotes.erase(std::remove_if(heldArpeggiatorNotes.begin(), heldArpeggiatorNotes.end(),
-                                                      [note](const auto& held) { return held.first == note; }),
+                                                      [partIndex, note](const auto& held)
+                                                      {
+                                                          return held.partIndex == partIndex && held.note == note;
+                                                      }),
                                        heldArpeggiatorNotes.end());
             refreshArpeggiatorHeldNotes();
             if (heldArpeggiatorNotes.empty())
@@ -330,7 +372,7 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
         }
 
         for (auto& voice : voices)
-            if (voice.active && message.getNoteNumber() == voice.note)
+            if (voice.active && voice.partIndex == partIndex && message.getNoteNumber() == voice.note)
                 for (auto& envelope : voice.ampEnvelopes)
                     envelope.noteOff();
     }
@@ -348,8 +390,13 @@ ChimeraEngineAudioProcessor::ActiveVoice& ChimeraEngineAudioProcessor::allocateV
     });
 }
 
-void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int note, int velocity)
+void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int partIndex, int note, int velocity)
 {
+    const auto& part = parts[static_cast<size_t>(std::clamp(partIndex, 0, static_cast<int>(maxParts) - 1))];
+    if (!part.enabled)
+        return;
+
+    target.partIndex = partIndex;
     target.note = note;
     target.age = ++voiceAgeCounter;
     target.velocityGain = std::clamp(static_cast<float>(velocity) / 127.0f, 0.0f, 1.0f);
@@ -365,9 +412,9 @@ void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int note, int 
     }
     target.elementCount = 0;
 
-    for (int i = 0; i < loadedElementCount; ++i)
+    for (int i = 0; i < part.loadedElementCount; ++i)
     {
-        const auto& element = loadedElements[static_cast<size_t>(i)];
+        const auto& element = part.loadedElements[static_cast<size_t>(i)];
         if (element.zone == nullptr || !element.zone->matches(note, velocity))
             continue;
 
@@ -418,15 +465,18 @@ void ChimeraEngineAudioProcessor::advanceArpeggiator()
         const auto velocity = [this, note]
         {
             if (auto held = std::find_if(heldArpeggiatorNotes.begin(), heldArpeggiatorNotes.end(),
-                                         [note](const auto& candidate) { return candidate.first == note; });
+                                         [this, note](const auto& candidate)
+                                         {
+                                             return candidate.partIndex == arpeggiatorPartIndex && candidate.note == note;
+                                         });
                 held != heldArpeggiatorNotes.end())
-                return held->second;
+                return held->velocity;
 
             return 100;
         }();
 
-        startVoice(allocateVoice(), note, velocity);
-        activeArpeggiatorNotes.push_back(note);
+        startVoice(allocateVoice(), arpeggiatorPartIndex, note, velocity);
+        activeArpeggiatorNotes.push_back({ arpeggiatorPartIndex, note });
     }
 
     const auto stepSamples = arpeggiatorStepSamples(currentSampleRate);
@@ -439,16 +489,17 @@ void ChimeraEngineAudioProcessor::refreshArpeggiatorHeldNotes()
     std::vector<int> notes;
     notes.reserve(heldArpeggiatorNotes.size());
     for (const auto& held : heldArpeggiatorNotes)
-        notes.push_back(held.first);
+        if (held.partIndex == arpeggiatorPartIndex)
+            notes.push_back(held.note);
 
     arpeggiator.setHeldNotes(std::move(notes));
 }
 
 void ChimeraEngineAudioProcessor::stopActiveArpeggiatorNotes()
 {
-    for (const auto note : activeArpeggiatorNotes)
+    for (const auto activeNote : activeArpeggiatorNotes)
         for (auto& voice : voices)
-            if (voice.active && voice.note == note)
+            if (voice.active && voice.partIndex == activeNote.partIndex && voice.note == activeNote.note)
                 for (auto& envelope : voice.ampEnvelopes)
                     envelope.noteOff();
 
