@@ -1,5 +1,28 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "preset/Preset.h"
+#include <algorithm>
+#include <cmath>
+
+namespace
+{
+juce::File projectRoot()
+{
+   #ifdef CHIMERA_PROJECT_ROOT
+    return juce::File(CHIMERA_PROJECT_ROOT);
+   #else
+    return juce::File::getSpecialLocation(juce::File::currentExecutableFile)
+        .getParentDirectory()
+        .getParentDirectory()
+        .getParentDirectory();
+   #endif
+}
+
+float dbToGain(float db)
+{
+    return std::pow(10.0f, db / 20.0f);
+}
+}
 
 ChimeraEngineAudioProcessor::ChimeraEngineAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
@@ -28,8 +51,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChimeraEngineAudioProcessor:
     return { params.begin(), params.end() };
 }
 
-void ChimeraEngineAudioProcessor::prepareToPlay(double, int)
+void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
 {
+    currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
+    voice.ampEnvelope.setSampleRate(currentSampleRate);
+    voice.filter.setSampleRate(currentSampleRate);
+    voice.filter.reset();
+    voice.player.stop();
+    voice.active = false;
+    ignoreUnused(loadDefaultPatch());
 }
 
 void ChimeraEngineAudioProcessor::releaseResources()
@@ -42,10 +72,26 @@ bool ChimeraEngineAudioProcessor::isBusesLayoutSupported(const BusesLayout& layo
     return output == juce::AudioChannelSet::mono() || output == juce::AudioChannelSet::stereo();
 }
 
-void ChimeraEngineAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void ChimeraEngineAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
+
+    auto midiIterator = midiMessages.cbegin();
+    const auto midiEnd = midiMessages.cend();
+
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+    {
+        while (midiIterator != midiEnd && (*midiIterator).samplePosition <= sample)
+        {
+            handleMidiMessage((*midiIterator).getMessage());
+            ++midiIterator;
+        }
+
+        const auto rendered = renderVoiceSample();
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            buffer.setSample(channel, sample, rendered);
+    }
 }
 
 juce::AudioProcessorEditor* ChimeraEngineAudioProcessor::createEditor()
@@ -76,6 +122,74 @@ void ChimeraEngineAudioProcessor::setStateInformation(const void* data, int size
 {
     if (auto tree = juce::ValueTree::readFromData(data, static_cast<size_t>(sizeInBytes)); tree.isValid())
         parameters.replaceState(tree);
+}
+
+juce::Result ChimeraEngineAudioProcessor::loadDefaultPatch()
+{
+    const auto root = projectRoot();
+    const auto patchFile = root.getChildFile("presets/Synth/Sine.chpatch");
+
+    chimera::preset::Patch patch;
+    if (const auto result = chimera::preset::loadPatch(patchFile, patch); result.failed())
+        return result;
+
+    if (patch.elements.empty())
+        return juce::Result::fail("Default patch has no elements");
+
+    const auto& element = patch.elements.front();
+    auto zone = std::make_shared<chimera::dsp::SampleZone>();
+    zone->setSource(root.getChildFile(element.samplePath));
+    zone->setRootKey(element.rootKey);
+    zone->setKeyRange(element.keyLow, element.keyHigh);
+    zone->setVelocityRange(element.velocityLow, element.velocityHigh);
+
+    if (const auto result = zone->loadAudio(); result.failed())
+        return result;
+
+    defaultZone = std::move(zone);
+    voice.player.setZone(defaultZone);
+    return juce::Result::ok();
+}
+
+void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& message)
+{
+    if (message.isNoteOn())
+    {
+        if (defaultZone == nullptr || !defaultZone->matches(message.getNoteNumber(), message.getVelocity()))
+            return;
+
+        voice.note = message.getNoteNumber();
+        voice.velocityGain = std::clamp(message.getFloatVelocity(), 0.0f, 1.0f);
+        voice.ampEnvelope.setStages(*parameters.getRawParameterValue("attack"), 0.05f, 0.05f, 1.0f,
+                                    *parameters.getRawParameterValue("release"), chimera::dsp::Curve::Linear);
+        voice.ampEnvelope.noteOn();
+        voice.player.start(voice.note, currentSampleRate);
+        voice.active = true;
+        return;
+    }
+
+    if (message.isNoteOff() && voice.active && message.getNoteNumber() == voice.note)
+        voice.ampEnvelope.noteOff();
+}
+
+float ChimeraEngineAudioProcessor::renderVoiceSample()
+{
+    if (!voice.active)
+        return 0.0f;
+
+    voice.filter.setCutoff(*parameters.getRawParameterValue("cutoff"));
+    voice.filter.setResonance(*parameters.getRawParameterValue("resonance"));
+
+    const auto envelope = voice.ampEnvelope.process();
+    const auto dry = voice.player.process();
+    const auto filtered = voice.filter.process(dry);
+    const auto gain = dbToGain(*parameters.getRawParameterValue("masterGain"));
+    const auto output = filtered * envelope * voice.velocityGain * gain;
+
+    if (!voice.player.isPlaying() || (!voice.ampEnvelope.isActive() && envelope <= 0.0f))
+        voice.active = false;
+
+    return output;
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

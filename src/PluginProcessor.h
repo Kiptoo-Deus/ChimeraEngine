@@ -1,6 +1,11 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "dsp/Envelope.h"
+#include "dsp/Filter.h"
+#include "dsp/SamplePlayer.h"
+#include "dsp/SampleZone.h"
+#include <memory>
 
 class ChimeraEngineAudioProcessor final : public juce::AudioProcessor
 {
@@ -34,7 +39,23 @@ public:
     juce::AudioProcessorValueTreeState& getParameters() { return parameters; }
 
 private:
+    struct ActiveVoice
+    {
+        chimera::dsp::SamplePlayer player;
+        chimera::dsp::Envelope ampEnvelope;
+        chimera::dsp::Filter filter;
+        int note = -1;
+        float velocityGain = 0.0f;
+        bool active = false;
+    };
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    juce::Result loadDefaultPatch();
+    void handleMidiMessage(const juce::MidiMessage& message);
+    float renderVoiceSample();
 
     juce::AudioProcessorValueTreeState parameters;
+    std::shared_ptr<chimera::dsp::SampleZone> defaultZone;
+    ActiveVoice voice;
+    double currentSampleRate = 44100.0;
 };

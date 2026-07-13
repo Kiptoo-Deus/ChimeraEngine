@@ -57,6 +57,8 @@ target_compile_definitions(ChimeraEngine
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
+    PRIVATE
+        CHIMERA_PROJECT_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 target_link_libraries(ChimeraEngine
@@ -87,8 +89,44 @@ add_executable(ChimeraEngineTests
 )
 
 target_include_directories(ChimeraEngineTests PRIVATE src)
+target_compile_definitions(ChimeraEngineTests PRIVATE CHIMERA_PROJECT_ROOT="${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(ChimeraEngineTests PRIVATE juce::juce_audio_basics juce::juce_audio_formats juce::juce_core)
 add_test(NAME ChimeraEngineDspTests COMMAND ChimeraEngineTests)
+
+add_executable(ChimeraEngineProcessorTests
+    tests/ProcessorRenderTests.cpp
+    src/PluginEditor.cpp
+    src/PluginProcessor.cpp
+    src/dsp/Envelope.cpp
+    src/dsp/Element.cpp
+    src/dsp/Filter.cpp
+    src/dsp/Lfo.cpp
+    src/dsp/ModulationMatrix.cpp
+    src/dsp/SamplePlayer.cpp
+    src/dsp/SampleZone.cpp
+    src/engine/Arpeggiator.cpp
+    src/engine/Performance.cpp
+    src/engine/VoiceAllocator.cpp
+    src/fx/FxChain.cpp
+    src/gui/LookAndFeel.cpp
+    src/preset/Preset.cpp
+)
+
+target_include_directories(ChimeraEngineProcessorTests PRIVATE src)
+target_compile_definitions(ChimeraEngineProcessorTests
+    PRIVATE
+        CHIMERA_PROJECT_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_VST3_CAN_REPLACE_VST2=0
+)
+target_link_libraries(ChimeraEngineProcessorTests
+    PRIVATE
+        juce::juce_audio_utils
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags
+)
+add_test(NAME ChimeraEngineProcessorRenderTests COMMAND ChimeraEngineProcessorTests)
 
 add_test(NAME ChimeraEngineSampleLicenseAudit
          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/audit_sample_licenses.py)
