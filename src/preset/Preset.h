@@ -13,6 +13,8 @@ struct ElementDefinition
     int keyHigh = 127;
     int velocityLow = 1;
     int velocityHigh = 127;
+    float level = 1.0f;
+    float pan = 0.0f;
 };
 
 struct PresetMetadata

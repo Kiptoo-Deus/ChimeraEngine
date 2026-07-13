@@ -62,12 +62,16 @@ juce::Result loadPatch(const juce::File& file, Patch& patch)
         element.rootKey = static_cast<int>(elementVar.getProperty("rootKey", 60));
         readRange(elementVar.getProperty("keyRange", {}), element.keyLow, element.keyHigh, 0, 127);
         readRange(elementVar.getProperty("velocityRange", {}), element.velocityLow, element.velocityHigh, 1, 127);
+        element.level = static_cast<float>(elementVar.getProperty("level", 1.0));
+        element.pan = static_cast<float>(elementVar.getProperty("pan", 0.0));
 
         if (element.samplePath.isEmpty())
             return juce::Result::fail("Patch element requires sample path: " + file.getFullPathName());
         if (element.rootKey < 0 || element.rootKey > 127
             || element.keyLow < 0 || element.keyHigh > 127
-            || element.velocityLow < 1 || element.velocityHigh > 127)
+            || element.velocityLow < 1 || element.velocityHigh > 127
+            || element.level < 0.0f || element.level > 2.0f
+            || element.pan < -1.0f || element.pan > 1.0f)
             return juce::Result::fail("Patch element MIDI ranges are invalid: " + file.getFullPathName());
 
         next.elements.push_back(element);

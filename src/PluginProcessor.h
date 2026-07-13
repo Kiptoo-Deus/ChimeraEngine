@@ -44,11 +44,21 @@ public:
     juce::String getCurrentPatchName() const { return currentPatchName; }
 
 private:
+    struct LoadedElement
+    {
+        std::shared_ptr<chimera::dsp::SampleZone> zone;
+        float level = 1.0f;
+        float pan = 0.0f;
+    };
+
     struct ActiveVoice
     {
-        chimera::dsp::SamplePlayer player;
+        std::array<chimera::dsp::SamplePlayer, 8> players;
+        std::array<float, 8> elementLevels {};
+        std::array<float, 8> elementPans {};
         chimera::dsp::Envelope ampEnvelope;
         chimera::dsp::Filter filter;
+        int elementCount = 0;
         int note = -1;
         uint64_t age = 0;
         float velocityGain = 0.0f;
@@ -56,11 +66,12 @@ private:
     };
 
     static constexpr size_t maxVoices = 16;
+    static constexpr size_t maxElements = 8;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::Result loadDefaultPatch();
     juce::Result loadPatchFile(const juce::File& patchFile);
-    void setActiveZone(std::shared_ptr<chimera::dsp::SampleZone> zone, const juce::String& patchName);
+    void setActiveElements(std::array<LoadedElement, maxElements> elements, int count, const juce::String& patchName);
     void handleMidiMessage(const juce::MidiMessage& message);
     ActiveVoice& allocateVoice();
     void startVoice(ActiveVoice& target, int note, int velocity);
@@ -70,7 +81,8 @@ private:
     juce::CriticalSection pendingMidiLock;
     juce::MidiBuffer pendingPreviewMidi;
     juce::CriticalSection zoneLock;
-    std::shared_ptr<chimera::dsp::SampleZone> defaultZone;
+    std::array<LoadedElement, maxElements> loadedElements;
+    int loadedElementCount = 0;
     juce::String currentPatchName { "Sine" };
     std::array<ActiveVoice, maxVoices> voices;
     double currentSampleRate = 44100.0;

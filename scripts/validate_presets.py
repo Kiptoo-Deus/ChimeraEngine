@@ -50,6 +50,14 @@ def validate_patch(path: pathlib.Path) -> list[str]:
             elif value[0] > value[1]:
                 errors.append(f"{path}: element {index} {key} low is greater than high")
 
+        level = element.get("level", 1.0)
+        if not isinstance(level, (int, float)) or level < 0.0 or level > 2.0:
+            errors.append(f"{path}: element {index} level must be between 0.0 and 2.0")
+
+        pan = element.get("pan", 0.0)
+        if not isinstance(pan, (int, float)) or pan < -1.0 or pan > 1.0:
+            errors.append(f"{path}: element {index} pan must be between -1.0 and 1.0")
+
     return errors
 
 

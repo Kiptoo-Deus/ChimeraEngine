@@ -62,10 +62,12 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
         voice.ampEnvelope.setSampleRate(currentSampleRate);
         voice.filter.setSampleRate(currentSampleRate);
         voice.filter.reset();
-        voice.player.stop();
+        for (auto& player : voice.players)
+            player.stop();
         voice.active = false;
         voice.note = -1;
         voice.age = 0;
+        voice.elementCount = 0;
     }
 
     ignoreUnused(loadDefaultPatch());
@@ -175,24 +177,40 @@ juce::Result ChimeraEngineAudioProcessor::loadPatchFile(const juce::File& patchF
     if (patch.elements.empty())
         return juce::Result::fail("Default patch has no elements");
 
-    const auto& element = patch.elements.front();
-    auto zone = std::make_shared<chimera::dsp::SampleZone>();
-    zone->setSource(projectRoot().getChildFile(element.samplePath));
-    zone->setRootKey(element.rootKey);
-    zone->setKeyRange(element.keyLow, element.keyHigh);
-    zone->setVelocityRange(element.velocityLow, element.velocityHigh);
+    std::array<LoadedElement, maxElements> elements;
+    auto count = 0;
 
-    if (const auto result = zone->loadAudio(); result.failed())
-        return result;
+    for (const auto& element : patch.elements)
+    {
+        if (count >= static_cast<int>(maxElements))
+            break;
 
-    setActiveZone(std::move(zone), patch.metadata.name);
+        auto zone = std::make_shared<chimera::dsp::SampleZone>();
+        zone->setSource(projectRoot().getChildFile(element.samplePath));
+        zone->setRootKey(element.rootKey);
+        zone->setKeyRange(element.keyLow, element.keyHigh);
+        zone->setVelocityRange(element.velocityLow, element.velocityHigh);
+
+        if (const auto result = zone->loadAudio(); result.failed())
+            return result;
+
+        elements[static_cast<size_t>(count)] = { std::move(zone), element.level, element.pan };
+        ++count;
+    }
+
+    if (count <= 0)
+        return juce::Result::fail("Patch contains no loadable elements");
+
+    setActiveElements(std::move(elements), count, patch.metadata.name);
     return juce::Result::ok();
 }
 
-void ChimeraEngineAudioProcessor::setActiveZone(std::shared_ptr<chimera::dsp::SampleZone> zone, const juce::String& patchName)
+void ChimeraEngineAudioProcessor::setActiveElements(std::array<LoadedElement, maxElements> elements, int count,
+                                                    const juce::String& patchName)
 {
     const juce::ScopedLock lock(zoneLock);
-    defaultZone = std::move(zone);
+    loadedElements = std::move(elements);
+    loadedElementCount = std::clamp(count, 0, static_cast<int>(maxElements));
     currentPatchName = patchName;
 
     for (auto& voice : voices)
@@ -201,8 +219,9 @@ void ChimeraEngineAudioProcessor::setActiveZone(std::shared_ptr<chimera::dsp::Sa
         voice.note = -1;
         voice.ampEnvelope.noteOff();
         voice.filter.reset();
-        voice.player.setZone(defaultZone);
-        voice.player.stop();
+        voice.elementCount = 0;
+        for (auto& player : voice.players)
+            player.stop();
     }
 }
 
@@ -211,7 +230,13 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
     if (message.isNoteOn())
     {
         const juce::ScopedLock lock(zoneLock);
-        if (defaultZone == nullptr || !defaultZone->matches(message.getNoteNumber(), message.getVelocity()))
+        auto hasMatch = false;
+        for (int i = 0; i < loadedElementCount; ++i)
+            if (loadedElements[static_cast<size_t>(i)].zone != nullptr
+                && loadedElements[static_cast<size_t>(i)].zone->matches(message.getNoteNumber(), message.getVelocity()))
+                hasMatch = true;
+
+        if (!hasMatch)
             return;
 
         startVoice(allocateVoice(), message.getNoteNumber(), message.getVelocity());
@@ -238,7 +263,6 @@ ChimeraEngineAudioProcessor::ActiveVoice& ChimeraEngineAudioProcessor::allocateV
 
 void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int note, int velocity)
 {
-    jassert(defaultZone != nullptr);
     target.note = note;
     target.age = ++voiceAgeCounter;
     target.velocityGain = std::clamp(static_cast<float>(velocity) / 127.0f, 0.0f, 1.0f);
@@ -248,8 +272,25 @@ void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int note, int 
     target.ampEnvelope.noteOn();
     target.filter.setSampleRate(currentSampleRate);
     target.filter.reset();
-    target.player.setZone(defaultZone);
-    target.player.start(target.note, currentSampleRate);
+    target.elementCount = 0;
+
+    for (int i = 0; i < loadedElementCount; ++i)
+    {
+        const auto& element = loadedElements[static_cast<size_t>(i)];
+        if (element.zone == nullptr || !element.zone->matches(note, velocity))
+            continue;
+
+        const auto playerIndex = static_cast<size_t>(target.elementCount);
+        target.players[playerIndex].setZone(element.zone);
+        target.players[playerIndex].start(target.note, currentSampleRate);
+        target.elementLevels[playerIndex] = element.level;
+        target.elementPans[playerIndex] = element.pan;
+        ++target.elementCount;
+
+        if (target.elementCount >= static_cast<int>(maxElements))
+            break;
+    }
+
     target.active = true;
 }
 
@@ -267,14 +308,23 @@ float ChimeraEngineAudioProcessor::renderVoiceSample()
         voice.filter.setResonance(*parameters.getRawParameterValue("resonance"));
 
         const auto envelope = voice.ampEnvelope.process();
-        const auto dry = voice.player.process();
+        auto dry = 0.0f;
+        auto anyPlaying = false;
+        for (int i = 0; i < voice.elementCount; ++i)
+        {
+            auto& player = voice.players[static_cast<size_t>(i)];
+            dry += player.process() * voice.elementLevels[static_cast<size_t>(i)];
+            anyPlaying = anyPlaying || player.isPlaying();
+        }
+
         const auto filtered = voice.filter.process(dry);
         output += filtered * envelope * voice.velocityGain * gain;
 
-        if (!voice.player.isPlaying() || (!voice.ampEnvelope.isActive() && envelope <= 0.0f))
+        if (!anyPlaying || (!voice.ampEnvelope.isActive() && envelope <= 0.0f))
         {
             voice.active = false;
             voice.note = -1;
+            voice.elementCount = 0;
         }
     }
 

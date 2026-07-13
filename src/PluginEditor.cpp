@@ -186,8 +186,9 @@ juce::Component* ChimeraEngineAudioProcessorEditor::makePresetPage()
     auto& saw = addPresetButton(*page, "Saw");
     auto& square = addPresetButton(*page, "Square");
     auto& triangle = addPresetButton(*page, "Triangle");
+    auto& stack = addPresetButton(*page, "Stack");
 
-    page->layout = [page, &sine, &saw, &square, &triangle]
+    page->layout = [page, &sine, &saw, &square, &triangle, &stack]
     {
         auto area = page->getLocalBounds().reduced(32, 48);
         const auto buttonHeight = 36;
@@ -198,6 +199,8 @@ juce::Component* ChimeraEngineAudioProcessorEditor::makePresetPage()
         square.setBounds(area.removeFromTop(buttonHeight));
         area.removeFromTop(10);
         triangle.setBounds(area.removeFromTop(buttonHeight));
+        area.removeFromTop(10);
+        stack.setBounds(area.removeFromTop(buttonHeight));
     };
     return page;
 }

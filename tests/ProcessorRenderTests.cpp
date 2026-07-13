@@ -64,6 +64,11 @@ int main()
     assert(renderAndSum(presetProcessor, sawMidi, 512) > 0.01f);
     assert(presetProcessor.loadSynthPreset("Square").wasOk());
     assert(presetProcessor.getCurrentPatchName() == "Square");
+    assert(presetProcessor.loadSynthPreset("Stack").wasOk());
+    assert(presetProcessor.getCurrentPatchName() == "Stack");
+    juce::MidiBuffer stackMidi;
+    stackMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    assert(renderAndSum(presetProcessor, stackMidi, 512) > 0.01f);
 
     std::cout << "Processor render test passed\n";
     return 0;

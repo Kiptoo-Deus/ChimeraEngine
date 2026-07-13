@@ -1,0 +1,32 @@
+{
+  "format": "chpatch",
+  "version": 1,
+  "name": "Stack",
+  "category": "Synth",
+  "elements": [
+    {
+      "sample": "samples/Synth/saw_C4_24bit.wav",
+      "rootKey": 60,
+      "keyRange": [0, 127],
+      "velocityRange": [1, 127],
+      "level": 0.55,
+      "pan": -0.2
+    },
+    {
+      "sample": "samples/Synth/square_C4_24bit.wav",
+      "rootKey": 60,
+      "keyRange": [0, 127],
+      "velocityRange": [1, 127],
+      "level": 0.35,
+      "pan": 0.2
+    },
+    {
+      "sample": "samples/Synth/triangle_C4_24bit.wav",
+      "rootKey": 60,
+      "keyRange": [0, 127],
+      "velocityRange": [1, 127],
+      "level": 0.45,
+      "pan": 0.0
+    }
+  ]
+}
