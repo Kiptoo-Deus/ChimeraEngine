@@ -57,6 +57,20 @@ void testSampleZone()
     assert(!zone.matches(60, 120));
 }
 
+void testSampleZoneLoadsAudio()
+{
+    chimera::dsp::SampleZone zone;
+    zone.setSource(juce::File::getCurrentWorkingDirectory()
+                       .getParentDirectory()
+                       .getChildFile("samples/Synth/sine_C4_24bit.wav"));
+    const auto result = zone.loadAudio();
+    assert(result.wasOk());
+    assert(zone.getNumChannels() == 1);
+    assert(zone.getNumSamples() > 1000);
+    assert(zone.getSourceSampleRate() > 0.0);
+    assert(std::isfinite(zone.sample(0, 100)));
+}
+
 void testVoiceAllocator()
 {
     chimera::engine::VoiceAllocator allocator(2);
@@ -192,6 +206,7 @@ int main()
     testEnvelope();
     testLfo();
     testSampleZone();
+    testSampleZoneLoadsAudio();
     testVoiceAllocator();
     testFilterStability();
     testModulationMatrix();

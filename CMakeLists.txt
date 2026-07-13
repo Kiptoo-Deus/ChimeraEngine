@@ -85,7 +85,7 @@ add_executable(ChimeraEngineTests
 )
 
 target_include_directories(ChimeraEngineTests PRIVATE src)
-target_link_libraries(ChimeraEngineTests PRIVATE juce::juce_audio_basics juce::juce_core)
+target_link_libraries(ChimeraEngineTests PRIVATE juce::juce_audio_basics juce::juce_audio_formats juce::juce_core)
 add_test(NAME ChimeraEngineDspTests COMMAND ChimeraEngineTests)
 
 add_test(NAME ChimeraEngineSampleLicenseAudit

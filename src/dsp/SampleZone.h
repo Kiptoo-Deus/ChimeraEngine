@@ -1,5 +1,6 @@
 #pragma once
 
+#include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_core/juce_core.h>
 #include <optional>
 
@@ -21,14 +22,21 @@ public:
     void setVelocityRange(int low, int high);
     void setLoop(std::optional<LoopRegion> newLoop);
     void setTuningCents(float cents);
+    juce::Result loadAudio();
 
     bool matches(int midiNote, int velocity) const;
     const juce::File& getSource() const { return source; }
     int getRootKey() const { return rootKey; }
     float getTuningCents() const { return tuningCents; }
+    double getSourceSampleRate() const { return sourceSampleRate; }
+    int64_t getNumSamples() const { return audio.getNumSamples(); }
+    int getNumChannels() const { return audio.getNumChannels(); }
+    float sample(int channel, int64_t index) const;
 
 private:
     juce::File source;
+    juce::AudioBuffer<float> audio;
+    double sourceSampleRate = 0.0;
     int rootKey = 60;
     int keyLow = 0;
     int keyHigh = 127;
