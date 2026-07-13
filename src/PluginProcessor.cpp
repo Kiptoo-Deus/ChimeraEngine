@@ -10,21 +10,21 @@ ChimeraEngineAudioProcessor::ChimeraEngineAudioProcessor()
 juce::AudioProcessorValueTreeState::ParameterLayout ChimeraEngineAudioProcessor::createParameterLayout()
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("masterGain", "Master Gain",
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "masterGain", 1 }, "Master Gain",
                                                                  juce::NormalisableRange<float>(-60.0f, 6.0f, 0.1f), -12.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("cutoff", "Cutoff",
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "cutoff", 1 }, "Cutoff",
                                                                  juce::NormalisableRange<float>(20.0f, 20000.0f, 1.0f, 0.35f), 12000.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("resonance", "Resonance",
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "resonance", 1 }, "Resonance",
                                                                  juce::NormalisableRange<float>(0.1f, 20.0f, 0.01f, 0.35f), 0.707f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("attack", "Attack",
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "attack", 1 }, "Attack",
                                                                  juce::NormalisableRange<float>(0.0f, 5.0f, 0.001f, 0.4f), 0.01f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("release", "Release",
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "release", 1 }, "Release",
                                                                  juce::NormalisableRange<float>(0.0f, 10.0f, 0.001f, 0.4f), 0.2f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("fxMix", "FX Mix",
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "fxMix", 1 }, "FX Mix",
                                                                  juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.25f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("arpGate", "Arp Gate",
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "arpGate", 1 }, "Arp Gate",
                                                                  juce::NormalisableRange<float>(0.05f, 1.0f, 0.001f), 0.75f));
-    params.push_back(std::make_unique<juce::AudioParameterBool>("arpEnabled", "Arp Enabled", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID { "arpEnabled", 1 }, "Arp Enabled", false));
     return { params.begin(), params.end() };
 }
 
