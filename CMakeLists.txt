@@ -81,6 +81,7 @@ add_executable(ChimeraEngineTests
     src/engine/Performance.cpp
     src/engine/VoiceAllocator.cpp
     src/fx/FxChain.cpp
+    src/preset/Preset.cpp
 )
 
 target_include_directories(ChimeraEngineTests PRIVATE src)
@@ -89,3 +90,6 @@ add_test(NAME ChimeraEngineDspTests COMMAND ChimeraEngineTests)
 
 add_test(NAME ChimeraEngineSampleLicenseAudit
          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/audit_sample_licenses.py)
+
+add_test(NAME ChimeraEnginePresetValidation
+         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate_presets.py)

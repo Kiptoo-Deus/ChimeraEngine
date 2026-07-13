@@ -8,6 +8,7 @@
 #include "engine/Performance.h"
 #include "engine/VoiceAllocator.h"
 #include "fx/FxChain.h"
+#include "preset/Preset.h"
 
 #include <cassert>
 #include <cmath>
@@ -157,6 +158,33 @@ void testFxProcessors()
     bus.prepare(1000.0);
     assert(bus.process(2.0f) <= 0.98f);
 }
+
+void testPresetLoader()
+{
+    const auto temp = juce::File::createTempFile("chimera-test.chpatch");
+    temp.replaceWithText(R"json({
+  "format": "chpatch",
+  "version": 1,
+  "name": "Unit Test Patch",
+  "category": "Synth",
+  "elements": [
+    {
+      "sample": "samples/Synth/sine_C4_24bit.wav",
+      "rootKey": 60,
+      "keyRange": [0, 127],
+      "velocityRange": [1, 127]
+    }
+  ]
+})json");
+
+    chimera::preset::Patch patch;
+    const auto result = chimera::preset::loadPatch(temp, patch);
+    assert(result.wasOk());
+    assert(patch.metadata.name == "Unit Test Patch");
+    assert(patch.elements.size() == 1);
+    assert(patch.elements[0].rootKey == 60);
+    temp.deleteFile();
+}
 }
 
 int main()
@@ -171,6 +199,7 @@ int main()
     testArpeggiator();
     testPerformance();
     testFxProcessors();
+    testPresetLoader();
     std::cout << "DSP tests passed\n";
     return 0;
 }
