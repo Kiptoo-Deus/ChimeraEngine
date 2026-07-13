@@ -40,6 +40,8 @@ public:
     juce::AudioProcessorValueTreeState& getParameters() { return parameters; }
     void enqueuePreviewNoteOn(int midiChannel, int midiNote, float velocity);
     void enqueuePreviewNoteOff(int midiChannel, int midiNote);
+    juce::Result loadSynthPreset(const juce::String& presetName);
+    juce::String getCurrentPatchName() const { return currentPatchName; }
 
 private:
     struct ActiveVoice
@@ -57,6 +59,8 @@ private:
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     juce::Result loadDefaultPatch();
+    juce::Result loadPatchFile(const juce::File& patchFile);
+    void setActiveZone(std::shared_ptr<chimera::dsp::SampleZone> zone, const juce::String& patchName);
     void handleMidiMessage(const juce::MidiMessage& message);
     ActiveVoice& allocateVoice();
     void startVoice(ActiveVoice& target, int note, int velocity);
@@ -65,7 +69,9 @@ private:
     juce::AudioProcessorValueTreeState parameters;
     juce::CriticalSection pendingMidiLock;
     juce::MidiBuffer pendingPreviewMidi;
+    juce::CriticalSection zoneLock;
     std::shared_ptr<chimera::dsp::SampleZone> defaultZone;
+    juce::String currentPatchName { "Sine" };
     std::array<ActiveVoice, maxVoices> voices;
     double currentSampleRate = 44100.0;
     uint64_t voiceAgeCounter = 0;

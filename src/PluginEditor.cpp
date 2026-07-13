@@ -93,6 +93,17 @@ juce::Slider& ChimeraEngineAudioProcessorEditor::addKnob(juce::Component& parent
     return *slider;
 }
 
+juce::TextButton& ChimeraEngineAudioProcessorEditor::addPresetButton(juce::Component& parent, const juce::String& presetName)
+{
+    auto* button = presetButtons.add(new juce::TextButton(presetName));
+    button->onClick = [this, presetName]
+    {
+        ignoreUnused(owner.loadSynthPreset(presetName));
+    };
+    parent.addAndMakeVisible(button);
+    return *button;
+}
+
 juce::Component* ChimeraEngineAudioProcessorEditor::makeOverviewPage()
 {
     auto* page = new EditorPage();
@@ -171,13 +182,22 @@ juce::Component* ChimeraEngineAudioProcessorEditor::makeArpPage()
 juce::Component* ChimeraEngineAudioProcessorEditor::makePresetPage()
 {
     auto* page = new EditorPage();
-    auto* label = labels.add(new juce::Label());
-    label->setText("Sine\nSaw\nSquare\nTriangle", juce::dontSendNotification);
-    label->setJustificationType(juce::Justification::topLeft);
-    page->addAndMakeVisible(label);
-    page->layout = [page, label]
+    auto& sine = addPresetButton(*page, "Sine");
+    auto& saw = addPresetButton(*page, "Saw");
+    auto& square = addPresetButton(*page, "Square");
+    auto& triangle = addPresetButton(*page, "Triangle");
+
+    page->layout = [page, &sine, &saw, &square, &triangle]
     {
-        label->setBounds(page->getLocalBounds().reduced(32));
+        auto area = page->getLocalBounds().reduced(32, 48);
+        const auto buttonHeight = 36;
+        sine.setBounds(area.removeFromTop(buttonHeight));
+        area.removeFromTop(10);
+        saw.setBounds(area.removeFromTop(buttonHeight));
+        area.removeFromTop(10);
+        square.setBounds(area.removeFromTop(buttonHeight));
+        area.removeFromTop(10);
+        triangle.setBounds(area.removeFromTop(buttonHeight));
     };
     return page;
 }

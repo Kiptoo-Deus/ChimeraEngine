@@ -155,8 +155,19 @@ void ChimeraEngineAudioProcessor::enqueuePreviewNoteOff(int midiChannel, int mid
 juce::Result ChimeraEngineAudioProcessor::loadDefaultPatch()
 {
     const auto root = projectRoot();
-    const auto patchFile = root.getChildFile("presets/Synth/Sine.chpatch");
+    return loadPatchFile(root.getChildFile("presets/Synth/Sine.chpatch"));
+}
 
+juce::Result ChimeraEngineAudioProcessor::loadSynthPreset(const juce::String& presetName)
+{
+    if (!presetName.containsOnly("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 _-"))
+        return juce::Result::fail("Preset name contains unsupported characters");
+
+    return loadPatchFile(projectRoot().getChildFile("presets/Synth").getChildFile(presetName + ".chpatch"));
+}
+
+juce::Result ChimeraEngineAudioProcessor::loadPatchFile(const juce::File& patchFile)
+{
     chimera::preset::Patch patch;
     if (const auto result = chimera::preset::loadPatch(patchFile, patch); result.failed())
         return result;
@@ -166,7 +177,7 @@ juce::Result ChimeraEngineAudioProcessor::loadDefaultPatch()
 
     const auto& element = patch.elements.front();
     auto zone = std::make_shared<chimera::dsp::SampleZone>();
-    zone->setSource(root.getChildFile(element.samplePath));
+    zone->setSource(projectRoot().getChildFile(element.samplePath));
     zone->setRootKey(element.rootKey);
     zone->setKeyRange(element.keyLow, element.keyHigh);
     zone->setVelocityRange(element.velocityLow, element.velocityHigh);
@@ -174,17 +185,32 @@ juce::Result ChimeraEngineAudioProcessor::loadDefaultPatch()
     if (const auto result = zone->loadAudio(); result.failed())
         return result;
 
-    defaultZone = std::move(zone);
-    for (auto& voice : voices)
-        voice.player.setZone(defaultZone);
-
+    setActiveZone(std::move(zone), patch.metadata.name);
     return juce::Result::ok();
+}
+
+void ChimeraEngineAudioProcessor::setActiveZone(std::shared_ptr<chimera::dsp::SampleZone> zone, const juce::String& patchName)
+{
+    const juce::ScopedLock lock(zoneLock);
+    defaultZone = std::move(zone);
+    currentPatchName = patchName;
+
+    for (auto& voice : voices)
+    {
+        voice.active = false;
+        voice.note = -1;
+        voice.ampEnvelope.noteOff();
+        voice.filter.reset();
+        voice.player.setZone(defaultZone);
+        voice.player.stop();
+    }
 }
 
 void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& message)
 {
     if (message.isNoteOn())
     {
+        const juce::ScopedLock lock(zoneLock);
         if (defaultZone == nullptr || !defaultZone->matches(message.getNoteNumber(), message.getVelocity()))
             return;
 
@@ -212,6 +238,7 @@ ChimeraEngineAudioProcessor::ActiveVoice& ChimeraEngineAudioProcessor::allocateV
 
 void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int note, int velocity)
 {
+    jassert(defaultZone != nullptr);
     target.note = note;
     target.age = ++voiceAgeCounter;
     target.velocityGain = std::clamp(static_cast<float>(velocity) / 127.0f, 0.0f, 1.0f);

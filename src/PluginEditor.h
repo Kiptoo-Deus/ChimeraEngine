@@ -27,6 +27,7 @@ private:
     juce::Component* makePresetPage();
     juce::Component* makeCreditsPage();
     juce::Slider& addKnob(juce::Component& parent, const juce::String& name);
+    juce::TextButton& addPresetButton(juce::Component& parent, const juce::String& presetName);
     void handleNoteOn(juce::MidiKeyboardState*, int midiChannel, int midiNoteNumber, float velocity) override;
     void handleNoteOff(juce::MidiKeyboardState*, int midiChannel, int midiNoteNumber, float velocity) override;
 
@@ -38,6 +39,7 @@ private:
     juce::Label title;
     juce::OwnedArray<juce::Slider> sliders;
     juce::OwnedArray<juce::Label> labels;
+    juce::OwnedArray<juce::TextButton> presetButtons;
     juce::OwnedArray<SliderAttachment> sliderAttachments;
     juce::OwnedArray<ButtonAttachment> buttonAttachments;
     juce::ToggleButton arpToggle;
