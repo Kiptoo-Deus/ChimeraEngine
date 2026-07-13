@@ -3,6 +3,7 @@
 #include "dsp/Filter.h"
 #include "dsp/Lfo.h"
 #include "dsp/ModulationMatrix.h"
+#include "dsp/SamplePlayer.h"
 #include "dsp/SampleZone.h"
 #include "engine/Arpeggiator.h"
 #include "engine/Performance.h"
@@ -69,6 +70,35 @@ void testSampleZoneLoadsAudio()
     assert(zone.getNumSamples() > 1000);
     assert(zone.getSourceSampleRate() > 0.0);
     assert(std::isfinite(zone.sample(0, 100)));
+}
+
+std::shared_ptr<chimera::dsp::SampleZone> loadTestZone()
+{
+    auto zone = std::make_shared<chimera::dsp::SampleZone>();
+    zone->setSource(juce::File::getCurrentWorkingDirectory()
+                        .getParentDirectory()
+                        .getChildFile("samples/Synth/sine_C4_24bit.wav"));
+    const auto result = zone->loadAudio();
+    assert(result.wasOk());
+    return zone;
+}
+
+void testSamplePlayer()
+{
+    chimera::dsp::SamplePlayer player;
+    player.setZone(loadTestZone());
+    player.start(60, 48000.0);
+    assert(player.isPlaying());
+    auto sum = 0.0f;
+    for (int i = 0; i < 256; ++i)
+        sum += std::abs(player.process());
+    assert(sum > 0.01f);
+
+    const auto firstPosition = player.getPosition();
+    player.start(72, 48000.0);
+    for (int i = 0; i < 16; ++i)
+        player.process();
+    assert(player.getPosition() > firstPosition * 0.05);
 }
 
 void testVoiceAllocator()
@@ -207,6 +237,7 @@ int main()
     testLfo();
     testSampleZone();
     testSampleZoneLoadsAudio();
+    testSamplePlayer();
     testVoiceAllocator();
     testFilterStability();
     testModulationMatrix();

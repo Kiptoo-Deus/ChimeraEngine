@@ -40,6 +40,7 @@ target_sources(ChimeraEngine PRIVATE
     src/dsp/Filter.cpp
     src/dsp/Lfo.cpp
     src/dsp/ModulationMatrix.cpp
+    src/dsp/SamplePlayer.cpp
     src/dsp/SampleZone.cpp
     src/engine/Arpeggiator.cpp
     src/engine/Performance.cpp
@@ -76,6 +77,7 @@ add_executable(ChimeraEngineTests
     src/dsp/Filter.cpp
     src/dsp/Lfo.cpp
     src/dsp/ModulationMatrix.cpp
+    src/dsp/SamplePlayer.cpp
     src/dsp/SampleZone.cpp
     src/engine/Arpeggiator.cpp
     src/engine/Performance.cpp
