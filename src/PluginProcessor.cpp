@@ -86,8 +86,15 @@ void ChimeraEngineAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
 
-    auto midiIterator = midiMessages.cbegin();
-    const auto midiEnd = midiMessages.cend();
+    juce::MidiBuffer mergedMidi;
+    {
+        const juce::ScopedLock lock(pendingMidiLock);
+        mergedMidi.swapWith(pendingPreviewMidi);
+    }
+    mergedMidi.addEvents(midiMessages, 0, buffer.getNumSamples(), 0);
+
+    auto midiIterator = mergedMidi.cbegin();
+    const auto midiEnd = mergedMidi.cend();
 
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
@@ -131,6 +138,18 @@ void ChimeraEngineAudioProcessor::setStateInformation(const void* data, int size
 {
     if (auto tree = juce::ValueTree::readFromData(data, static_cast<size_t>(sizeInBytes)); tree.isValid())
         parameters.replaceState(tree);
+}
+
+void ChimeraEngineAudioProcessor::enqueuePreviewNoteOn(int midiChannel, int midiNote, float velocity)
+{
+    const juce::ScopedLock lock(pendingMidiLock);
+    pendingPreviewMidi.addEvent(juce::MidiMessage::noteOn(midiChannel, midiNote, velocity), 0);
+}
+
+void ChimeraEngineAudioProcessor::enqueuePreviewNoteOff(int midiChannel, int midiNote)
+{
+    const juce::ScopedLock lock(pendingMidiLock);
+    pendingPreviewMidi.addEvent(juce::MidiMessage::noteOff(midiChannel, midiNote), 0);
 }
 
 juce::Result ChimeraEngineAudioProcessor::loadDefaultPatch()

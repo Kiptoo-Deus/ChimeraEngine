@@ -36,7 +36,19 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     tabs.addTab("Credits", juce::Colour(0xff161b22), makeCreditsPage(), true);
     addAndMakeVisible(tabs);
 
-    setSize(900, 560);
+    keyboardState.addListener(this);
+    keyboard.setAvailableRange(36, 84);
+    keyboard.setKeyWidth(22.0f);
+    keyboard.setScrollButtonsVisible(false);
+    addAndMakeVisible(keyboard);
+
+    setSize(900, 640);
+}
+
+ChimeraEngineAudioProcessorEditor::~ChimeraEngineAudioProcessorEditor()
+{
+    keyboardState.removeListener(this);
+    setLookAndFeel(nullptr);
 }
 
 void ChimeraEngineAudioProcessorEditor::paint(juce::Graphics& g)
@@ -50,7 +62,20 @@ void ChimeraEngineAudioProcessorEditor::resized()
 {
     auto bounds = getLocalBounds().reduced(18);
     title.setBounds(bounds.removeFromTop(52));
+    keyboard.setBounds(bounds.removeFromBottom(86).reduced(0, 10));
     tabs.setBounds(bounds);
+}
+
+void ChimeraEngineAudioProcessorEditor::handleNoteOn(juce::MidiKeyboardState*, int midiChannel,
+                                                     int midiNoteNumber, float velocity)
+{
+    owner.enqueuePreviewNoteOn(midiChannel, midiNoteNumber, velocity);
+}
+
+void ChimeraEngineAudioProcessorEditor::handleNoteOff(juce::MidiKeyboardState*, int midiChannel,
+                                                      int midiNoteNumber, float)
+{
+    owner.enqueuePreviewNoteOff(midiChannel, midiNoteNumber);
 }
 
 juce::Slider& ChimeraEngineAudioProcessorEditor::addKnob(juce::Component& parent, const juce::String& name)

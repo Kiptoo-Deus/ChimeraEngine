@@ -38,6 +38,8 @@ public:
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& getParameters() { return parameters; }
+    void enqueuePreviewNoteOn(int midiChannel, int midiNote, float velocity);
+    void enqueuePreviewNoteOff(int midiChannel, int midiNote);
 
 private:
     struct ActiveVoice
@@ -61,6 +63,8 @@ private:
     float renderVoiceSample();
 
     juce::AudioProcessorValueTreeState parameters;
+    juce::CriticalSection pendingMidiLock;
+    juce::MidiBuffer pendingPreviewMidi;
     std::shared_ptr<chimera::dsp::SampleZone> defaultZone;
     std::array<ActiveVoice, maxVoices> voices;
     double currentSampleRate = 44100.0;

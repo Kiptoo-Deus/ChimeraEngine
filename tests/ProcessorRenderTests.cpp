@@ -48,6 +48,13 @@ int main()
     const auto releaseSum = renderAndSum(chordProcessor, release, 128);
     assert(releaseSum > 0.0f);
 
+    ChimeraEngineAudioProcessor previewProcessor;
+    previewProcessor.prepareToPlay(48000.0, 512);
+    previewProcessor.enqueuePreviewNoteOn(1, 72, 0.8f);
+    juce::MidiBuffer emptyMidi;
+    const auto previewSum = renderAndSum(previewProcessor, emptyMidi, 512);
+    assert(previewSum > 0.01f);
+
     std::cout << "Processor render test passed\n";
     return 0;
 }
