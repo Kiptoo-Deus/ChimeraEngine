@@ -80,6 +80,7 @@ add_executable(ChimeraEngineTests
     src/engine/Arpeggiator.cpp
     src/engine/Performance.cpp
     src/engine/VoiceAllocator.cpp
+    src/fx/FxChain.cpp
 )
 
 target_include_directories(ChimeraEngineTests PRIVATE src)

@@ -7,6 +7,7 @@
 #include "engine/Arpeggiator.h"
 #include "engine/Performance.h"
 #include "engine/VoiceAllocator.h"
+#include "fx/FxChain.h"
 
 #include <cassert>
 #include <cmath>
@@ -124,6 +125,38 @@ void testPerformance()
     assert(!performance.partMatches(0, 80, 64, 1));
     assert(!performance.partMatches(0, 60, 64, 2));
 }
+
+void testFxProcessors()
+{
+    chimera::fx::Distortion distortion;
+    distortion.setDrive(4.0f);
+    assert(distortion.process(0.5f) < 1.0f);
+    assert(distortion.process(0.5f) > 0.5f);
+
+    chimera::fx::Compressor compressor;
+    compressor.prepare(1000.0);
+    compressor.setParameters(-20.0f, 4.0f, 0.1f, 10.0f, 0.0f);
+    auto compressed = 0.0f;
+    for (int i = 0; i < 32; ++i)
+        compressed = compressor.process(1.0f);
+    assert(compressed < 1.0f);
+
+    chimera::fx::Delay delay;
+    delay.prepare(1000.0);
+    delay.setParameters(1.0f, 0.0f, 1.0f);
+    assert(std::abs(delay.process(0.75f)) < 0.001f);
+    assert(delay.process(0.0f) > 0.7f);
+
+    chimera::fx::FxChain chain;
+    chain.prepare(1000.0);
+    chain.add(std::make_unique<chimera::fx::Distortion>());
+    assert(chain.size() == 1);
+    assert(std::isfinite(chain.process(0.2f)));
+
+    chimera::fx::MasterBus bus;
+    bus.prepare(1000.0);
+    assert(bus.process(2.0f) <= 0.98f);
+}
 }
 
 int main()
@@ -137,6 +170,7 @@ int main()
     testElement();
     testArpeggiator();
     testPerformance();
+    testFxProcessors();
     std::cout << "DSP tests passed\n";
     return 0;
 }
