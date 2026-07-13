@@ -64,6 +64,9 @@ juce::Result loadPatch(const juce::File& file, Patch& patch)
         readRange(elementVar.getProperty("velocityRange", {}), element.velocityLow, element.velocityHigh, 1, 127);
         element.level = static_cast<float>(elementVar.getProperty("level", 1.0));
         element.pan = static_cast<float>(elementVar.getProperty("pan", 0.0));
+        element.ampAttack = static_cast<float>(elementVar.getProperty("ampAttack", 0.0));
+        element.ampSustain = static_cast<float>(elementVar.getProperty("ampSustain", 1.0));
+        element.ampRelease = static_cast<float>(elementVar.getProperty("ampRelease", 0.0));
 
         if (element.samplePath.isEmpty())
             return juce::Result::fail("Patch element requires sample path: " + file.getFullPathName());
@@ -71,7 +74,10 @@ juce::Result loadPatch(const juce::File& file, Patch& patch)
             || element.keyLow < 0 || element.keyHigh > 127
             || element.velocityLow < 1 || element.velocityHigh > 127
             || element.level < 0.0f || element.level > 2.0f
-            || element.pan < -1.0f || element.pan > 1.0f)
+            || element.pan < -1.0f || element.pan > 1.0f
+            || element.ampAttack < 0.0f || element.ampAttack > 10.0f
+            || element.ampSustain < 0.0f || element.ampSustain > 1.0f
+            || element.ampRelease < 0.0f || element.ampRelease > 20.0f)
             return juce::Result::fail("Patch element MIDI ranges are invalid: " + file.getFullPathName());
 
         next.elements.push_back(element);

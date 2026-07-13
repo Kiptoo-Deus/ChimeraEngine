@@ -66,7 +66,8 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
 
     for (auto& voice : voices)
     {
-        voice.ampEnvelope.setSampleRate(currentSampleRate);
+        for (auto& envelope : voice.ampEnvelopes)
+            envelope.setSampleRate(currentSampleRate);
         for (auto& filter : voice.filters)
         {
             filter.setSampleRate(currentSampleRate);
@@ -212,6 +213,9 @@ juce::Result ChimeraEngineAudioProcessor::loadPatchFile(const juce::File& patchF
             return result;
 
         elements[static_cast<size_t>(count)] = { std::move(zone), element.level, element.pan };
+        elements[static_cast<size_t>(count)].ampAttack = element.ampAttack;
+        elements[static_cast<size_t>(count)].ampSustain = element.ampSustain;
+        elements[static_cast<size_t>(count)].ampRelease = element.ampRelease;
         ++count;
     }
 
@@ -234,7 +238,8 @@ void ChimeraEngineAudioProcessor::setActiveElements(std::array<LoadedElement, ma
     {
         voice.active = false;
         voice.note = -1;
-        voice.ampEnvelope.noteOff();
+        for (auto& envelope : voice.ampEnvelopes)
+            envelope.noteOff();
         for (auto& filter : voice.filters)
             filter.reset();
         voice.elementCount = 0;
@@ -264,7 +269,8 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
     if (message.isNoteOff())
         for (auto& voice : voices)
             if (voice.active && message.getNoteNumber() == voice.note)
-                voice.ampEnvelope.noteOff();
+                for (auto& envelope : voice.ampEnvelopes)
+                    envelope.noteOff();
 }
 
 ChimeraEngineAudioProcessor::ActiveVoice& ChimeraEngineAudioProcessor::allocateVoice()
@@ -284,10 +290,11 @@ void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int note, int 
     target.note = note;
     target.age = ++voiceAgeCounter;
     target.velocityGain = std::clamp(static_cast<float>(velocity) / 127.0f, 0.0f, 1.0f);
-    target.ampEnvelope.setSampleRate(currentSampleRate);
-    target.ampEnvelope.setStages(*parameters.getRawParameterValue("attack"), 0.05f, 0.05f, 1.0f,
-                                 *parameters.getRawParameterValue("release"), chimera::dsp::Curve::Linear);
-    target.ampEnvelope.noteOn();
+    for (auto& envelope : target.ampEnvelopes)
+    {
+        envelope.setSampleRate(currentSampleRate);
+        envelope.noteOff();
+    }
     for (auto& filter : target.filters)
     {
         filter.setSampleRate(currentSampleRate);
@@ -306,6 +313,13 @@ void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int note, int 
         target.players[playerIndex].start(target.note, currentSampleRate);
         target.elementLevels[playerIndex] = element.level;
         target.elementPans[playerIndex] = element.pan;
+        target.ampEnvelopes[playerIndex].setStages(*parameters.getRawParameterValue("attack") + element.ampAttack,
+                                                   0.05f,
+                                                   0.05f,
+                                                   element.ampSustain,
+                                                   *parameters.getRawParameterValue("release") + element.ampRelease,
+                                                   chimera::dsp::Curve::Linear);
+        target.ampEnvelopes[playerIndex].noteOn();
         ++target.elementCount;
 
         if (target.elementCount >= static_cast<int>(maxElements))
@@ -325,10 +339,14 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
         if (!voice.active)
             continue;
 
-        const auto envelope = voice.ampEnvelope.process();
         auto anyPlaying = false;
+        auto anyEnvelopeActive = false;
         for (int i = 0; i < voice.elementCount; ++i)
         {
+            auto& envelope = voice.ampEnvelopes[static_cast<size_t>(i)];
+            const auto amp = envelope.process();
+            anyEnvelopeActive = anyEnvelopeActive || envelope.isActive();
+
             auto& filter = voice.filters[static_cast<size_t>(i)];
             filter.setCutoff(*parameters.getRawParameterValue("cutoff"));
             filter.setResonance(*parameters.getRawParameterValue("resonance"));
@@ -338,7 +356,7 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
             const auto [leftPan, rightPan] = panGains(voice.elementPans[static_cast<size_t>(i)]);
             const auto element = filtered
                 * voice.elementLevels[static_cast<size_t>(i)]
-                * envelope
+                * amp
                 * voice.velocityGain
                 * gain;
 
@@ -347,7 +365,7 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
             anyPlaying = anyPlaying || player.isPlaying();
         }
 
-        if (!anyPlaying || (!voice.ampEnvelope.isActive() && envelope <= 0.0f))
+        if (!anyPlaying || !anyEnvelopeActive)
         {
             voice.active = false;
             voice.note = -1;

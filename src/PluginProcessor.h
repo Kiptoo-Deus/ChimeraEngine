@@ -55,15 +55,18 @@ private:
         std::shared_ptr<chimera::dsp::SampleZone> zone;
         float level = 1.0f;
         float pan = 0.0f;
+        float ampAttack = 0.0f;
+        float ampSustain = 1.0f;
+        float ampRelease = 0.0f;
     };
 
     struct ActiveVoice
     {
         std::array<chimera::dsp::SamplePlayer, 8> players;
         std::array<chimera::dsp::Filter, 8> filters;
+        std::array<chimera::dsp::Envelope, 8> ampEnvelopes;
         std::array<float, 8> elementLevels {};
         std::array<float, 8> elementPans {};
-        chimera::dsp::Envelope ampEnvelope;
         int elementCount = 0;
         int note = -1;
         uint64_t age = 0;
