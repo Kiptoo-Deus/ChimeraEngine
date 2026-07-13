@@ -64,6 +64,7 @@ juce::Result loadPatch(const juce::File& file, Patch& patch)
         readRange(elementVar.getProperty("velocityRange", {}), element.velocityLow, element.velocityHigh, 1, 127);
         element.level = static_cast<float>(elementVar.getProperty("level", 1.0));
         element.pan = static_cast<float>(elementVar.getProperty("pan", 0.0));
+        element.tuningCents = static_cast<float>(elementVar.getProperty("tuningCents", 0.0));
         element.ampAttack = static_cast<float>(elementVar.getProperty("ampAttack", 0.0));
         element.ampSustain = static_cast<float>(elementVar.getProperty("ampSustain", 1.0));
         element.ampRelease = static_cast<float>(elementVar.getProperty("ampRelease", 0.0));
@@ -75,6 +76,7 @@ juce::Result loadPatch(const juce::File& file, Patch& patch)
             || element.velocityLow < 1 || element.velocityHigh > 127
             || element.level < 0.0f || element.level > 2.0f
             || element.pan < -1.0f || element.pan > 1.0f
+            || element.tuningCents < -1200.0f || element.tuningCents > 1200.0f
             || element.ampAttack < 0.0f || element.ampAttack > 10.0f
             || element.ampSustain < 0.0f || element.ampSustain > 1.0f
             || element.ampRelease < 0.0f || element.ampRelease > 20.0f)

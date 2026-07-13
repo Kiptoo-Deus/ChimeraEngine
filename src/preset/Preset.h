@@ -15,6 +15,7 @@ struct ElementDefinition
     int velocityHigh = 127;
     float level = 1.0f;
     float pan = 0.0f;
+    float tuningCents = 0.0f;
     float ampAttack = 0.0f;
     float ampSustain = 1.0f;
     float ampRelease = 0.0f;

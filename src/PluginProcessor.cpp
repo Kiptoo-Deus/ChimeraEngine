@@ -208,6 +208,7 @@ juce::Result ChimeraEngineAudioProcessor::loadPatchFile(const juce::File& patchF
         zone->setRootKey(element.rootKey);
         zone->setKeyRange(element.keyLow, element.keyHigh);
         zone->setVelocityRange(element.velocityLow, element.velocityHigh);
+        zone->setTuningCents(element.tuningCents);
 
         if (const auto result = zone->loadAudio(); result.failed())
             return result;

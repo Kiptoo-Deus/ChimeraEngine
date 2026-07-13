@@ -58,6 +58,10 @@ def validate_patch(path: pathlib.Path) -> list[str]:
         if not isinstance(pan, (int, float)) or pan < -1.0 or pan > 1.0:
             errors.append(f"{path}: element {index} pan must be between -1.0 and 1.0")
 
+        tuning_cents = element.get("tuningCents", 0.0)
+        if not isinstance(tuning_cents, (int, float)) or tuning_cents < -1200.0 or tuning_cents > 1200.0:
+            errors.append(f"{path}: element {index} tuningCents must be between -1200.0 and 1200.0")
+
         amp_attack = element.get("ampAttack", 0.0)
         if not isinstance(amp_attack, (int, float)) or amp_attack < 0.0 or amp_attack > 10.0:
             errors.append(f"{path}: element {index} ampAttack must be between 0.0 and 10.0")

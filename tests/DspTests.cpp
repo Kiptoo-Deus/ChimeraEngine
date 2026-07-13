@@ -216,7 +216,8 @@ void testPresetLoader()
       "sample": "samples/Synth/sine_C4_24bit.wav",
       "rootKey": 60,
       "keyRange": [0, 127],
-      "velocityRange": [1, 127]
+      "velocityRange": [1, 127],
+      "tuningCents": 5.5
     }
   ]
 })json");
@@ -227,6 +228,7 @@ void testPresetLoader()
     assert(patch.metadata.name == "Unit Test Patch");
     assert(patch.elements.size() == 1);
     assert(patch.elements[0].rootKey == 60);
+    assert(std::abs(patch.elements[0].tuningCents - 5.5f) < 0.001f);
     temp.deleteFile();
 }
 }

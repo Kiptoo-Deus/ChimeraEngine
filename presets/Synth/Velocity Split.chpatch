@@ -1,0 +1,44 @@
+{
+  "format": "chpatch",
+  "version": 1,
+  "name": "Velocity Split",
+  "category": "Synth",
+  "elements": [
+    {
+      "sample": "samples/Synth/triangle_C4_24bit.wav",
+      "rootKey": 60,
+      "keyRange": [0, 127],
+      "velocityRange": [1, 63],
+      "level": 0.8,
+      "pan": -0.1,
+      "tuningCents": 0.0,
+      "ampAttack": 0.04,
+      "ampSustain": 0.9,
+      "ampRelease": 0.25
+    },
+    {
+      "sample": "samples/Synth/saw_C4_24bit.wav",
+      "rootKey": 60,
+      "keyRange": [0, 127],
+      "velocityRange": [64, 110],
+      "level": 0.65,
+      "pan": 0.0,
+      "tuningCents": -3.0,
+      "ampAttack": 0.01,
+      "ampSustain": 0.95,
+      "ampRelease": 0.12
+    },
+    {
+      "sample": "samples/Synth/square_C4_24bit.wav",
+      "rootKey": 60,
+      "keyRange": [0, 127],
+      "velocityRange": [111, 127],
+      "level": 0.55,
+      "pan": 0.15,
+      "tuningCents": 4.0,
+      "ampAttack": 0.0,
+      "ampSustain": 1.0,
+      "ampRelease": 0.08
+    }
+  ]
+}

@@ -1,6 +1,6 @@
-# Chimera Engine inspired from my favorite boards Yamaha MOX/MOXF and Motif
+# Chimera Engine
 
-Chimera Engine is an original element-based sample instrument plugin built with JUCE and CMake.
+Chimera Engine is an original workstation-inspired, element-based sample instrument plugin built with JUCE and CMake.
 
 The project targets VST3, AU on macOS, and a standalone app. The engine is organized around layered elements, multisample zones, envelopes, LFOs, filters, modulation, effects, and performance presets.
 

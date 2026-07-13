@@ -78,6 +78,30 @@ int main()
     juce::MidiBuffer stackMidi;
     stackMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
     assert(renderAndSum(presetProcessor, stackMidi, 512) > 0.01f);
+    assert(presetProcessor.loadSynthPreset("Velocity Split").wasOk());
+    assert(presetProcessor.getCurrentPatchName() == "Velocity Split");
+
+    juce::MidiBuffer lowVelocityMidi;
+    lowVelocityMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(40)), 0);
+    const auto lowVelocitySum = renderAndSum(presetProcessor, lowVelocityMidi, 512);
+    assert(lowVelocitySum > 0.01f);
+
+    ChimeraEngineAudioProcessor midVelocityProcessor;
+    midVelocityProcessor.prepareToPlay(48000.0, 512);
+    assert(midVelocityProcessor.loadSynthPreset("Velocity Split").wasOk());
+    juce::MidiBuffer midVelocityMidi;
+    midVelocityMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(90)), 0);
+    const auto midVelocitySum = renderAndSum(midVelocityProcessor, midVelocityMidi, 512);
+    assert(midVelocitySum > 0.01f);
+
+    ChimeraEngineAudioProcessor highVelocityProcessor;
+    highVelocityProcessor.prepareToPlay(48000.0, 512);
+    assert(highVelocityProcessor.loadSynthPreset("Velocity Split").wasOk());
+    juce::MidiBuffer highVelocityMidi;
+    highVelocityMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(120)), 0);
+    const auto highVelocitySum = renderAndSum(highVelocityProcessor, highVelocityMidi, 512);
+    assert(highVelocitySum > 0.01f);
+    assert(std::abs(lowVelocitySum - highVelocitySum) > 0.001f);
 
     ChimeraEngineAudioProcessor stereoProcessor;
     stereoProcessor.prepareToPlay(48000.0, 512);
