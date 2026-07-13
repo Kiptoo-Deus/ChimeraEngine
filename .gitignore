@@ -1,0 +1,9 @@
+build/
+cmake-build-*/
+.DS_Store
+*.jucer
+*.vst3
+*.component
+*.app
+*.log
+!samples/rejected.log
