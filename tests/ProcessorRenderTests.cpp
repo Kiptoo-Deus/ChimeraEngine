@@ -442,7 +442,19 @@ static void runMetadataAndEditorTests(const juce::File& exportDir)
     assert(metadataProcessor.indexSampleLibrary(exportDir).wasOk());
     assert(metadataProcessor.getIndexedSampleCount() > 0);
     metadataProcessor.applyMidi2PerNoteController(1, 60, 74, 0.75f);
+    assert(std::abs(metadataProcessor.getMidi2PerNoteControllerValue(1, 60, 74) - 0.75f) < 0.001f);
     assert(metadataProcessor.ingestMidi2UmpWords(0x40000000u, 0xa03c4a00u, 0xffffffffu, 0u));
+    assert(metadataProcessor.ingestMidi2UmpWords(0x40904000u, 0x0000ffffu, 0u, 0u));
+    assert(metadataProcessor.ingestMidi2UmpWords(0x40a04000u, 0x80000000u, 0u, 0u));
+    assert(metadataProcessor.ingestMidi2UmpWords(0x40b00100u, 0xc0000000u, 0u, 0u));
+    assert(metadataProcessor.ingestMidi2UmpWords(0x40d00000u, 0x90000000u, 0u, 0u));
+    assert(metadataProcessor.ingestMidi2UmpWords(0x40e00000u, 0xffffffffu, 0u, 0u));
+    assert(metadataProcessor.ingestMidi2UmpWords(0x40604000u, 0xffffffffu, 0u, 0u));
+    assert(metadataProcessor.ingestMidi2UmpWords(0x40004000u, 0x004affffu, 0u, 0u));
+    assert(metadataProcessor.getMidi2ExpressionSummary().contains("active 1"));
+    assert(metadataProcessor.getMidi2PerNoteControllerValue(1, 64, 74) > 0.99f);
+    assert(metadataProcessor.getMidi2ChannelControllerValue(1, 1) > 0.70f);
+    assert(metadataProcessor.getMidi2PerNotePitchBendSemitones(1, 64) > 1.9f);
     assert(metadataProcessor.canUndo());
     const auto undoText = metadataProcessor.undoLastEdit();
     assert(undoText.contains("Undo"));
@@ -455,6 +467,8 @@ static void runMetadataAndEditorTests(const juce::File& exportDir)
     meteredMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
     assert(renderAndSum(metadataProcessor, meteredMidi, 512) > 0.01f);
     assert(metadataProcessor.getOutputPeakLeft() > 0.0f || metadataProcessor.getOutputPeakRight() > 0.0f);
+    assert(metadataProcessor.ingestMidi2UmpWords(0x40804000u, 0x0000ffffu, 0u, 0u));
+    assert(metadataProcessor.getMidi2ExpressionSummary().contains("active 0"));
 
     auto workstationEditProcessor = std::make_unique<ChimeraEngineAudioProcessor>();
     workstationEditProcessor->prepareToPlay(48000.0, 512);

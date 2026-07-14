@@ -1227,9 +1227,10 @@ void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
         case WorkstationPage::Demo:
             setRows({ "INNOVATION DEMO: sequencer -> scenes -> 4 arps",
                       "Scene snapshots drive parts, mixer, sends, insert FX",
-                      "MPE-style channel expression routes per-note controls",
+                      "MIDI 2.0 UMP and MPE-style expression route per-note controls",
                       "Live MIDI flow is visible while the demo plays",
                       "Tick/variation/MPE status updates in the transport" });
+            pageLabels[5]->setText(owner.getMidi2ExpressionSummary(), juce::dontSendNotification);
             pageActionButtons[0]->setButtonText("Var 1");
             pageActionButtons[1]->setButtonText(owner.isSequencerPlaybackEnabled() ? "Stop" : "Play");
             pageActionButtons[2]->setButtonText("Reset");

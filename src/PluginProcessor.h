@@ -79,6 +79,10 @@ public:
     bool isMpeExpressionEnabled() const { return mpeExpressionEnabled; }
     void applyMidi2PerNoteController(int midiChannel, int midiNote, int controller, float value);
     bool ingestMidi2UmpWords(std::uint32_t word0, std::uint32_t word1, std::uint32_t word2, std::uint32_t word3);
+    float getMidi2PerNoteControllerValue(int midiChannel, int midiNote, int controller) const;
+    float getMidi2PerNotePitchBendSemitones(int midiChannel, int midiNote) const;
+    float getMidi2ChannelControllerValue(int midiChannel, int controller) const;
+    juce::String getMidi2ExpressionSummary() const;
     void setLiveRecordingEnabled(bool shouldRecord, bool overdub, bool punch);
     bool isLiveRecordingEnabled() const { return liveRecordingEnabled; }
     void setCurrentSequencerTrack(int trackIndex);
@@ -282,6 +286,17 @@ private:
         bool valid = false;
     };
 
+    struct Midi2NoteExpression
+    {
+        float pressure = 0.0f;
+        float timbre = 0.0f;
+        float pitchBendSemitones = 0.0f;
+        float noteOnVelocity = 0.0f;
+        float noteOffVelocity = 0.0f;
+        bool active = false;
+        std::map<int, float> controllers;
+    };
+
     static constexpr size_t maxParts = 16;
     static constexpr size_t maxVoices = 128;
     static constexpr size_t maxElements = 8;
@@ -338,6 +353,8 @@ private:
     std::map<juce::String, bool> presetFavorites;
     std::map<std::pair<int, int>, ActiveRecordingNote> activeRecordingNotes;
     std::map<std::pair<int, int>, float> midi2PerNotePressure;
+    std::map<std::pair<int, int>, Midi2NoteExpression> midi2NoteExpressions;
+    std::map<std::pair<int, int>, float> midi2ChannelControllers;
     std::vector<FxPreset> fxPresetBank;
     std::array<chimera::fx::WorkstationFx, 2> workstationFx;
     std::array<chimera::fx::EffectType, chimera::fx::InsertRack::slotCount> insertEffects {};

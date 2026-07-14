@@ -716,8 +716,16 @@ void ChimeraEngineAudioProcessor::applyMidi2PerNoteController(int midiChannel, i
     const auto clampedChannel = std::clamp(midiChannel, 1, 16);
     const auto clampedNote = std::clamp(midiNote, 0, 127);
     const auto clampedValue = std::clamp(value, 0.0f, 1.0f);
+    auto& noteExpression = midi2NoteExpressions[{ clampedChannel, clampedNote }];
+    noteExpression.controllers[controller] = clampedValue;
+    if (controller == 74)
+        noteExpression.timbre = clampedValue;
     if (controller == 74 || controller == 128)
+    {
         midi2PerNotePressure[{ clampedChannel, clampedNote }] = clampedValue;
+        if (controller == 128)
+            noteExpression.pressure = clampedValue;
+    }
 
     if (mpeExpressionEnabled)
         aftertouchValues[0] = std::max(aftertouchValues[0], clampedValue);
@@ -731,21 +739,177 @@ bool ChimeraEngineAudioProcessor::ingestMidi2UmpWords(std::uint32_t word0, std::
     if (messageType != 0x4)
         return false;
 
-    const auto status = static_cast<int>((word1 >> 24) & 0xff);
     const auto group = static_cast<int>((word0 >> 24) & 0x0f);
-    const auto channel = (status & 0x0f) + 1;
-    const auto opcode = status & 0xf0;
-    if (opcode != 0xa0 && opcode != 0xd0 && opcode != 0x20)
-        return false;
 
-    const auto note = static_cast<int>((word1 >> 16) & 0x7f);
-    const auto controller = opcode == 0xa0 ? static_cast<int>((word1 >> 8) & 0xff) : 128;
-    const auto value = static_cast<float>(static_cast<double>(word2) / static_cast<double>(std::numeric_limits<std::uint32_t>::max()));
-    applyMidi2PerNoteController(channel, note, controller, value);
-    pushUndoAction("MIDI 2.0 UMP group " + juce::String(group + 1)
-                   + " note " + juce::String(note)
-                   + " controller " + juce::String(controller));
+    auto statusNibble = static_cast<int>((word0 >> 20) & 0x0f);
+    auto channel = static_cast<int>((word0 >> 16) & 0x0f) + 1;
+    auto index = static_cast<int>((word0 >> 8) & 0x7f);
+    auto value = static_cast<float>(static_cast<double>(word1) / static_cast<double>(std::numeric_limits<std::uint32_t>::max()));
+
+    if (statusNibble == 0)
+    {
+        const auto status = static_cast<int>((word1 >> 24) & 0xff);
+        const auto legacyStatusNibble = (status >> 4) & 0x0f;
+        if (legacyStatusNibble == 0x0a || legacyStatusNibble == 0x0d || legacyStatusNibble == 0x02)
+        {
+            channel = (status & 0x0f) + 1;
+            statusNibble = legacyStatusNibble;
+            index = static_cast<int>((word1 >> 16) & 0x7f);
+            const auto controller = statusNibble == 0x0a ? static_cast<int>((word1 >> 8) & 0xff) : 128;
+
+            applyMidi2PerNoteController(channel, index, controller, static_cast<float>(static_cast<double>(word2)
+                / static_cast<double>(std::numeric_limits<std::uint32_t>::max())));
+            pushUndoAction("MIDI 2.0 UMP group " + juce::String(group + 1)
+                           + " note " + juce::String(index)
+                           + " controller " + juce::String(controller));
+            return true;
+        }
+    }
+
+    const auto normalized16 = [](std::uint32_t raw)
+    {
+        return std::clamp(static_cast<float>(raw & 0xffffu) / 65535.0f, 0.0f, 1.0f);
+    };
+
+    const auto normalized32 = [](std::uint32_t raw)
+    {
+        return std::clamp(static_cast<float>(static_cast<double>(raw) / static_cast<double>(std::numeric_limits<std::uint32_t>::max())),
+                          0.0f,
+                          1.0f);
+    };
+
+    auto action = juce::String("MIDI 2.0 UMP group ") + juce::String(group + 1);
+    switch (statusNibble)
+    {
+        case 0x08:
+        {
+            auto& noteExpression = midi2NoteExpressions[{ channel, index }];
+            noteExpression.active = false;
+            noteExpression.noteOffVelocity = normalized16(word1);
+            midi2PerNotePressure.erase({ channel, index });
+            juce::MidiMessage noteOff = juce::MidiMessage::noteOff(channel, index, noteExpression.noteOffVelocity);
+            handleMidiMessage(noteOff);
+            action += " note off " + juce::String(index);
+            break;
+        }
+        case 0x09:
+        {
+            auto& noteExpression = midi2NoteExpressions[{ channel, index }];
+            noteExpression.active = true;
+            noteExpression.noteOnVelocity = normalized16(word1);
+            juce::MidiMessage noteOn = juce::MidiMessage::noteOn(channel, index, noteExpression.noteOnVelocity);
+            handleMidiMessage(noteOn);
+            action += " note on " + juce::String(index);
+            break;
+        }
+        case 0x0a:
+        {
+            value = normalized32(word1);
+            auto& noteExpression = midi2NoteExpressions[{ channel, index }];
+            noteExpression.pressure = value;
+            noteExpression.controllers[128] = value;
+            midi2PerNotePressure[{ channel, index }] = value;
+            action += " per-note pressure " + juce::String(index);
+            break;
+        }
+        case 0x0b:
+        {
+            const auto controller = index;
+            value = normalized32(word1);
+            midi2ChannelControllers[{ channel, controller }] = value;
+            const auto partIndex = mpeExpressionEnabled && channel > 1 ? 0 : channel - 1;
+            if (controller == 1)
+                modWheelValues[static_cast<size_t>(std::clamp(partIndex, 0, static_cast<int>(maxParts) - 1))] = value;
+            action += " controller " + juce::String(controller);
+            break;
+        }
+        case 0x0d:
+        {
+            value = normalized32(word1);
+            const auto partIndex = std::clamp(mpeExpressionEnabled && channel > 1 ? 0 : channel - 1, 0, static_cast<int>(maxParts) - 1);
+            aftertouchValues[static_cast<size_t>(partIndex)] = value;
+            action += " channel pressure";
+            break;
+        }
+        case 0x0e:
+        {
+            value = normalized32(word1);
+            const auto partIndex = std::clamp(mpeExpressionEnabled && channel > 1 ? 0 : channel - 1, 0, static_cast<int>(maxParts) - 1);
+            pitchBendSemitones[static_cast<size_t>(partIndex)] = (value * 2.0f - 1.0f)
+                * static_cast<float>(parts[static_cast<size_t>(partIndex)].pitchBendRange);
+            action += " pitch bend";
+            break;
+        }
+        case 0x06:
+        {
+            value = normalized32(word1);
+            auto& noteExpression = midi2NoteExpressions[{ channel, index }];
+            const auto partIndex = std::clamp(channel - 1, 0, static_cast<int>(maxParts) - 1);
+            noteExpression.pitchBendSemitones = (value * 2.0f - 1.0f)
+                * static_cast<float>(parts[static_cast<size_t>(partIndex)].pitchBendRange);
+            action += " per-note pitch bend " + juce::String(index);
+            break;
+        }
+        case 0x00:
+        case 0x01:
+        {
+            const auto note = index;
+            const auto controller = static_cast<int>((word1 >> 16) & 0xffffu);
+            value = normalized16(word1);
+            applyMidi2PerNoteController(channel, note, controller, value);
+            action += " per-note controller " + juce::String(controller);
+            break;
+        }
+        default:
+            return false;
+    }
+
+    pushUndoAction(action);
     return true;
+}
+
+float ChimeraEngineAudioProcessor::getMidi2PerNoteControllerValue(int midiChannel, int midiNote, int controller) const
+{
+    const auto key = std::pair<int, int> { std::clamp(midiChannel, 1, 16), std::clamp(midiNote, 0, 127) };
+    if (const auto note = midi2NoteExpressions.find(key); note != midi2NoteExpressions.end())
+        if (const auto found = note->second.controllers.find(controller); found != note->second.controllers.end())
+            return found->second;
+    return 0.0f;
+}
+
+float ChimeraEngineAudioProcessor::getMidi2PerNotePitchBendSemitones(int midiChannel, int midiNote) const
+{
+    const auto key = std::pair<int, int> { std::clamp(midiChannel, 1, 16), std::clamp(midiNote, 0, 127) };
+    if (const auto found = midi2NoteExpressions.find(key); found != midi2NoteExpressions.end())
+        return found->second.pitchBendSemitones;
+    return 0.0f;
+}
+
+float ChimeraEngineAudioProcessor::getMidi2ChannelControllerValue(int midiChannel, int controller) const
+{
+    const auto key = std::pair<int, int> { std::clamp(midiChannel, 1, 16), std::clamp(controller, 0, 127) };
+    if (const auto found = midi2ChannelControllers.find(key); found != midi2ChannelControllers.end())
+        return found->second;
+    return 0.0f;
+}
+
+juce::String ChimeraEngineAudioProcessor::getMidi2ExpressionSummary() const
+{
+    auto activeNotes = 0;
+    auto bentNotes = 0;
+    for (const auto& [key, note] : midi2NoteExpressions)
+    {
+        juce::ignoreUnused(key);
+        if (note.active)
+            ++activeNotes;
+        if (std::abs(note.pitchBendSemitones) > 0.001f)
+            ++bentNotes;
+    }
+
+    return "MIDI 2.0 notes " + juce::String(static_cast<int>(midi2NoteExpressions.size()))
+        + " active " + juce::String(activeNotes)
+        + " bent " + juce::String(bentNotes)
+        + " controllers " + juce::String(static_cast<int>(midi2ChannelControllers.size()));
 }
 
 void ChimeraEngineAudioProcessor::setLiveRecordingEnabled(bool shouldRecord, bool overdub, bool punch)
@@ -2038,9 +2202,13 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
             auto modAmp = 0.0f;
             auto modPan = 0.0f;
             auto perNoteExpression = 0.0f;
+            auto perNotePitchBendSemitones = 0.0f;
             if (const auto found = midi2PerNotePressure.find({ parts[partIndex].voiceMode == "poly" ? voice.partIndex + 1 : 1, voice.note });
                 found != midi2PerNotePressure.end())
                 perNoteExpression = found->second;
+            if (const auto found = midi2NoteExpressions.find({ parts[partIndex].voiceMode == "poly" ? voice.partIndex + 1 : 1, voice.note });
+                found != midi2NoteExpressions.end())
+                perNotePitchBendSemitones = found->second.pitchBendSemitones;
             const auto expressive = std::max({ modWheelValues[partIndex], aftertouchValues[partIndex], perNoteExpression });
             for (int slot = 0; slot < voice.modSlotCounts[static_cast<size_t>(i)]; ++slot)
             {
@@ -2066,7 +2234,7 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
             filter.setResonance(*parameters.getRawParameterValue("resonance"));
 
             auto& player = voice.players[static_cast<size_t>(i)];
-            const auto pitchCents = pitchBendSemitones[partIndex] * 100.0f
+            const auto pitchCents = (pitchBendSemitones[partIndex] + perNotePitchBendSemitones) * 100.0f
                 + voice.currentPitchCents
                 + pitchEg * voice.pitchEnvelopeDepths[static_cast<size_t>(i)]
                 + modPitchCents;
