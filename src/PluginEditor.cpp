@@ -85,7 +85,312 @@ void fitRow(std::initializer_list<juce::Component*> components, juce::Rectangle<
         area.removeFromLeft(gap);
     }
 }
+
+void drawGrid(juce::Graphics& g, juce::Rectangle<float> area, int columns, int rows, juce::Colour line)
+{
+    g.setColour(line);
+    for (int column = 0; column <= columns; ++column)
+    {
+        const auto x = area.getX() + area.getWidth() * static_cast<float>(column) / static_cast<float>(columns);
+        g.drawVerticalLine(juce::roundToInt(x), area.getY(), area.getBottom());
+    }
+    for (int row = 0; row <= rows; ++row)
+    {
+        const auto y = area.getY() + area.getHeight() * static_cast<float>(row) / static_cast<float>(rows);
+        g.drawHorizontalLine(juce::roundToInt(y), area.getX(), area.getRight());
+    }
 }
+}
+
+class ChimeraEngineAudioProcessorEditor::GraphicalEditor final : public juce::Component
+{
+public:
+    explicit GraphicalEditor(ChimeraEngineAudioProcessor& processor)
+        : owner(processor)
+    {
+    }
+
+    void setPage(WorkstationPage newPage)
+    {
+        page = newPage;
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        const auto bounds = getLocalBounds().toFloat();
+        g.setColour(juce::Colour(0xff0a0d12));
+        g.fillRoundedRectangle(bounds, 5.0f);
+        g.setColour(juce::Colour(0xff334155));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
+
+        auto area = bounds.reduced(10.0f);
+        drawHeader(g, area.removeFromTop(20.0f));
+        area.removeFromTop(6.0f);
+
+        switch (page)
+        {
+            case WorkstationPage::Voice: drawModMatrix(g, area); break;
+            case WorkstationPage::Performance: drawPerformanceScenes(g, area); break;
+            case WorkstationPage::Mix: drawMetersAndFx(g, area); break;
+            case WorkstationPage::Arp: drawArpGrid(g, area); break;
+            case WorkstationPage::Song: drawPianoRollAndEvents(g, area); break;
+            case WorkstationPage::Pattern: drawPatternArranger(g, area); break;
+            case WorkstationPage::Sample: drawSampleAndDrumMap(g, area); break;
+            case WorkstationPage::Utility: drawUtilityMap(g, area); break;
+            case WorkstationPage::Demo: drawInnovationFlow(g, area); break;
+        }
+    }
+
+private:
+    void drawHeader(juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+        g.setColour(juce::Colour(0xffa7f3d0));
+        g.drawText(pageName(page).toUpperCase() + " GRAPH EDITOR", area, juce::Justification::centredLeft);
+        g.setColour(juce::Colour(0xff64748b));
+        g.drawText("Tick " + juce::String(owner.getSequencerTick())
+                       + "  Notes " + juce::String(owner.getCurrentSongNoteCount()),
+                   area,
+                   juce::Justification::centredRight);
+    }
+
+    void drawPianoRollAndEvents(juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        auto roll = area.removeFromLeft(area.getWidth() * 0.68f);
+        auto events = area.reduced(8.0f, 0.0f);
+        g.setColour(juce::Colour(0xff101722));
+        g.fillRoundedRectangle(roll, 4.0f);
+        drawGrid(g, roll, 16, 12, juce::Colour(0x26374857));
+
+        const std::array<int, 12> pitches { 72, 76, 67, 64, 60, 55, 52, 48, 43, 40, 36, 31 };
+        const auto noteCount = std::max(1, owner.getCurrentSongNoteCount());
+        for (int i = 0; i < std::min(14, noteCount); ++i)
+        {
+            const auto row = i % static_cast<int>(pitches.size());
+            const auto x = roll.getX() + 8.0f + std::fmod(static_cast<float>(i) * 37.0f, roll.getWidth() - 52.0f);
+            const auto y = roll.getY() + 4.0f + static_cast<float>(row) * (roll.getHeight() - 8.0f) / 12.0f;
+            const auto width = 26.0f + static_cast<float>((i % 4) * 12);
+            g.setColour(i % 2 == 0 ? accent() : amber());
+            g.fillRoundedRectangle({ x, y, width, 8.0f }, 2.0f);
+        }
+
+        const auto playX = roll.getX() + std::fmod(static_cast<float>(owner.getSequencerTick()) / 1920.0f, 1.0f) * roll.getWidth();
+        g.setColour(juce::Colour(0xfff8fafc));
+        g.drawLine(playX, roll.getY(), playX, roll.getBottom(), 1.4f);
+
+        g.setColour(juce::Colour(0xff101722));
+        g.fillRoundedRectangle(events, 4.0f);
+        g.setFont(juce::FontOptions(10.5f, juce::Font::bold));
+        for (int row = 0; row < 6; ++row)
+        {
+            auto line = events.removeFromTop(18.0f);
+            g.setColour(row % 2 == 0 ? juce::Colour(0xff172033) : juce::Colour(0xff111827));
+            g.fillRoundedRectangle(line, 2.0f);
+            g.setColour(juce::Colour(0xffdbeafe));
+            g.drawText("T" + juce::String(row + 1) + "  note "
+                           + juce::String(48 + row * 4)
+                           + "  vel " + juce::String(88 + row * 3),
+                       line.reduced(6.0f, 0.0f),
+                       juce::Justification::centredLeft);
+        }
+    }
+
+    void drawArpGrid(juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        g.setColour(juce::Colour(0xff101722));
+        g.fillRoundedRectangle(area, 4.0f);
+        drawGrid(g, area, 16, 4, juce::Colour(0x30374857));
+
+        for (int lane = 0; lane < 4; ++lane)
+        {
+            const auto laneY = area.getY() + static_cast<float>(lane) * area.getHeight() / 4.0f;
+            g.setColour(juce::Colour(0xff94a3b8));
+            g.drawText("ARP " + juce::String(lane + 1)
+                           + "  USER " + juce::String(owner.getArpLaneAssignment(lane)),
+                       juce::Rectangle<float>(area.getX() + 6.0f, laneY + 2.0f, 86.0f, 16.0f),
+                       juce::Justification::centredLeft);
+            for (int step = 0; step < 16; step += 3)
+            {
+                const auto x = area.getX() + static_cast<float>(step) * area.getWidth() / 16.0f + 2.0f;
+                const auto h = 10.0f + static_cast<float>((lane + step) % 4) * 5.0f;
+                g.setColour(lane % 2 == 0 ? accent() : amber());
+                g.fillRoundedRectangle({ x, laneY + area.getHeight() / 4.0f - h - 5.0f, area.getWidth() / 16.0f - 4.0f, h }, 2.0f);
+            }
+        }
+    }
+
+    void drawPatternArranger(juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+        const auto columns = 8;
+        const auto rows = 2;
+        drawGrid(g, area, columns, rows, juce::Colour(0x30374857));
+        for (int section = 0; section < 16; ++section)
+        {
+            const auto col = section % columns;
+            const auto row = section / columns;
+            auto cell = juce::Rectangle<float>(area.getX() + col * area.getWidth() / columns,
+                                               area.getY() + row * area.getHeight() / rows,
+                                               area.getWidth() / columns,
+                                               area.getHeight() / rows).reduced(4.0f);
+            const auto phrase = owner.getPatternSectionPhrase(section);
+            g.setColour(phrase > 0 ? juce::Colour(0xff164e63) : juce::Colour(0xff111827));
+            g.fillRoundedRectangle(cell, 4.0f);
+            g.setColour(phrase > 0 ? juce::Colour(0xff67e8f9) : juce::Colour(0xff94a3b8));
+            g.drawText(juce::String::charToString(static_cast<juce::juce_wchar>('A' + section)), cell.removeFromTop(16.0f), juce::Justification::centred);
+            g.drawText("PHR " + juce::String(phrase), cell, juce::Justification::centred);
+        }
+    }
+
+    void drawSampleAndDrumMap(juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        auto drum = area.removeFromLeft(area.getWidth() * 0.46f).reduced(0.0f, 2.0f);
+        auto sample = area.reduced(8.0f, 2.0f);
+        drawGrid(g, drum, 8, 4, juce::Colour(0x30374857));
+        for (int pad = 0; pad < 32; ++pad)
+        {
+            const auto col = pad % 8;
+            const auto row = pad / 8;
+            auto cell = juce::Rectangle<float>(drum.getX() + col * drum.getWidth() / 8.0f,
+                                               drum.getY() + row * drum.getHeight() / 4.0f,
+                                               drum.getWidth() / 8.0f,
+                                               drum.getHeight() / 4.0f).reduced(3.0f);
+            g.setColour(pad < owner.getMappedDrumKeyCount() ? amber() : juce::Colour(0xff111827));
+            g.fillRoundedRectangle(cell, 3.0f);
+        }
+
+        g.setColour(juce::Colour(0xff101722));
+        g.fillRoundedRectangle(sample, 4.0f);
+        const auto indexed = std::max(1, owner.getIndexedSampleCount());
+        for (int zone = 0; zone < std::min(12, indexed); ++zone)
+        {
+            const auto x = sample.getX() + 8.0f + static_cast<float>(zone) * (sample.getWidth() - 16.0f) / 12.0f;
+            const auto h = 18.0f + static_cast<float>(zone % 4) * 8.0f;
+            g.setColour(zone % 2 == 0 ? accent() : juce::Colour(0xff60a5fa));
+            g.fillRoundedRectangle({ x, sample.getBottom() - h - 8.0f, 12.0f, h }, 2.0f);
+        }
+        g.setColour(juce::Colour(0xffdbeafe));
+        g.drawText("Samples indexed: " + juce::String(owner.getIndexedSampleCount()), sample.reduced(8.0f), juce::Justification::topLeft);
+    }
+
+    void drawModMatrix(juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+        const std::array<juce::String, 6> sources { "VEL", "MOD", "AT", "LFO1", "LFO2", "EG" };
+        const std::array<juce::String, 4> dests { "PITCH", "CUT", "AMP", "PAN" };
+        drawGrid(g, area, static_cast<int>(dests.size()) + 1, static_cast<int>(sources.size()) + 1, juce::Colour(0x30374857));
+        for (int d = 0; d < static_cast<int>(dests.size()); ++d)
+        {
+            g.setColour(juce::Colour(0xff94a3b8));
+            g.drawText(dests[static_cast<size_t>(d)],
+                       juce::Rectangle<float>(area.getX() + (d + 1) * area.getWidth() / 5.0f, area.getY(), area.getWidth() / 5.0f, 18.0f),
+                       juce::Justification::centred);
+        }
+        for (int s = 0; s < static_cast<int>(sources.size()); ++s)
+        {
+            g.setColour(juce::Colour(0xff94a3b8));
+            g.drawText(sources[static_cast<size_t>(s)],
+                       juce::Rectangle<float>(area.getX(), area.getY() + (s + 1) * area.getHeight() / 7.0f, area.getWidth() / 5.0f, 18.0f),
+                       juce::Justification::centred);
+            for (int d = 0; d < static_cast<int>(dests.size()); ++d)
+            {
+                if ((s + d) % 3 != 0)
+                    continue;
+                auto cell = juce::Rectangle<float>(area.getX() + (d + 1) * area.getWidth() / 5.0f,
+                                                   area.getY() + (s + 1) * area.getHeight() / 7.0f,
+                                                   area.getWidth() / 5.0f,
+                                                   area.getHeight() / 7.0f).reduced(8.0f, 5.0f);
+                g.setColour(d % 2 == 0 ? accent() : amber());
+                g.fillRoundedRectangle(cell, 3.0f);
+            }
+        }
+        g.setColour(juce::Colour(0xffdbeafe));
+        g.drawText(owner.getModMatrixSummary(0), area.reduced(8.0f), juce::Justification::bottomLeft);
+    }
+
+    void drawPerformanceScenes(juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        for (int scene = 0; scene < 8; ++scene)
+        {
+            auto cell = juce::Rectangle<float>(area.getX() + (scene % 4) * area.getWidth() / 4.0f,
+                                               area.getY() + (scene / 4) * area.getHeight() / 2.0f,
+                                               area.getWidth() / 4.0f,
+                                               area.getHeight() / 2.0f).reduced(5.0f);
+            g.setColour(scene == owner.getCurrentPerformanceScene() ? juce::Colour(0xff115e59) : juce::Colour(0xff111827));
+            g.fillRoundedRectangle(cell, 4.0f);
+            g.setColour(scene == owner.getCurrentPerformanceScene() ? accent() : juce::Colour(0xff94a3b8));
+            g.drawRoundedRectangle(cell, 4.0f, 1.0f);
+            g.drawText(owner.getSceneName(scene), cell.reduced(7.0f), juce::Justification::topLeft);
+            g.drawText("ARP " + juce::String(owner.getArpLaneAssignment(scene % 4)), cell.reduced(7.0f), juce::Justification::bottomRight);
+        }
+    }
+
+    void drawMetersAndFx(juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        auto meters = area.removeFromLeft(76.0f);
+        auto rack = area.reduced(8.0f, 0.0f);
+        const auto leftLevel = std::clamp(owner.getOutputPeakLeft(), 0.0f, 1.0f);
+        const auto rightLevel = std::clamp(owner.getOutputPeakRight(), 0.0f, 1.0f);
+        for (int i = 0; i < 2; ++i)
+        {
+            auto bar = meters.removeFromLeft(28.0f).reduced(6.0f, 0.0f);
+            g.setColour(juce::Colour(0xff111827));
+            g.fillRoundedRectangle(bar, 4.0f);
+            const auto level = i == 0 ? leftLevel : rightLevel;
+            g.setColour(i == 0 ? accent() : amber());
+            g.fillRoundedRectangle(bar.withTrimmedTop(bar.getHeight() * (1.0f - level)), 4.0f);
+        }
+        drawGrid(g, rack, 4, 2, juce::Colour(0x30374857));
+        for (int slot = 0; slot < 8; ++slot)
+        {
+            auto cell = juce::Rectangle<float>(rack.getX() + (slot % 4) * rack.getWidth() / 4.0f,
+                                               rack.getY() + (slot / 4) * rack.getHeight() / 2.0f,
+                                               rack.getWidth() / 4.0f,
+                                               rack.getHeight() / 2.0f).reduced(5.0f);
+            g.setColour(juce::Colour(0xff172033));
+            g.fillRoundedRectangle(cell, 4.0f);
+            g.setColour(juce::Colour(0xffdbeafe));
+            g.drawText("I" + juce::String(slot + 1), cell.reduced(6.0f), juce::Justification::centredLeft);
+        }
+    }
+
+    void drawUtilityMap(juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        drawInnovationFlow(g, area);
+        g.setColour(juce::Colour(0xffdbeafe));
+        g.drawText("MIDI OUT / MIDI IN / WAV BOUNCE / VALIDATION", area.reduced(8.0f), juce::Justification::bottomRight);
+    }
+
+    void drawInnovationFlow(juce::Graphics& g, juce::Rectangle<float> area)
+    {
+        const std::array<juce::String, 6> nodes { "SEQ", "SCENE", "4 ARPS", "PARTS", "FX", "OUT" };
+        const auto nodeW = area.getWidth() / 6.0f - 8.0f;
+        for (int i = 0; i < 6; ++i)
+        {
+            auto node = juce::Rectangle<float>(area.getX() + i * area.getWidth() / 6.0f + 4.0f,
+                                               area.getCentreY() - 24.0f,
+                                               nodeW,
+                                               48.0f);
+            g.setColour(i == owner.getCurrentPerformanceScene() + 1 ? amber() : juce::Colour(0xff122033));
+            g.fillRoundedRectangle(node, 5.0f);
+            g.setColour(i % 2 == 0 ? accent() : juce::Colour(0xff60a5fa));
+            g.drawRoundedRectangle(node, 5.0f, 1.2f);
+            g.drawText(nodes[static_cast<size_t>(i)], node, juce::Justification::centred);
+            if (i < 5)
+            {
+                g.setColour(juce::Colour(0xff64748b));
+                g.drawArrow({ node.getRight() + 2.0f, node.getCentreY(), node.getRight() + area.getWidth() / 6.0f - 10.0f, node.getCentreY() },
+                            1.4f,
+                            7.0f,
+                            6.0f);
+            }
+        }
+    }
+
+    ChimeraEngineAudioProcessor& owner;
+    WorkstationPage page = WorkstationPage::Demo;
+};
 
 ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngineAudioProcessor& p)
     : AudioProcessorEditor(&p), owner(p)
@@ -151,6 +456,8 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
 
     addPartMixerControls();
     addPageSurfaceControls();
+    graphicalEditor = std::make_unique<GraphicalEditor>(owner);
+    addAndMakeVisible(*graphicalEditor);
 
     for (const auto& text : {
              "SEQ -> SCENE -> 4 ARP LANES",
@@ -312,21 +619,27 @@ void ChimeraEngineAudioProcessorEditor::resized()
     arpArea.removeFromTop(4);
     sequencerTickLabel.setBounds(arpArea.removeFromTop(22));
 
-    auto monitor = elementMonitorBounds.reduced(16, 34);
     for (int i = 0; i < labels.size(); ++i)
     {
         if (labels[i]->getAttachedComponent() != nullptr)
             continue;
 
-        labels[i]->setBounds(monitor.removeFromTop(24));
-        monitor.removeFromTop(5);
+        labels[i]->setVisible(false);
     }
 
     auto pageArea = elementMonitorBounds.reduced(16, 34);
+    graphicalEditor->setBounds(pageArea.removeFromTop(178).toNearestInt());
+    pageArea.removeFromTop(8);
     for (int i = 0; i < pageLabels.size(); ++i)
     {
-        pageLabels[i]->setBounds(pageArea.removeFromTop(24));
-        pageArea.removeFromTop(5);
+        if (i >= 4)
+        {
+            pageLabels[i]->setVisible(false);
+            continue;
+        }
+        pageLabels[i]->setVisible(true);
+        pageLabels[i]->setBounds(pageArea.removeFromTop(18).toNearestInt());
+        pageArea.removeFromTop(3);
     }
     pageArea.removeFromTop(2);
     const auto actionWidth = (pageArea.getWidth() - 12) / 4;
@@ -626,6 +939,8 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
 void ChimeraEngineAudioProcessorEditor::setActivePage(WorkstationPage page)
 {
     activePage = page;
+    if (graphicalEditor != nullptr)
+        graphicalEditor->setPage(activePage);
     lcdLine.setText(pageName(activePage) + " page selected", juce::dontSendNotification);
     for (int i = 0; i < modeButtons.size(); ++i)
         modeButtons[i]->setColour(juce::TextButton::buttonColourId,
@@ -1086,4 +1401,6 @@ void ChimeraEngineAudioProcessorEditor::timerCallback()
     refreshPartMixerControls();
     refreshFxControls();
     refreshTransportControls();
+    if (graphicalEditor != nullptr)
+        graphicalEditor->repaint();
 }

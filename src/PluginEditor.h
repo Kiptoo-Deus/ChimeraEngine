@@ -3,6 +3,7 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "gui/LookAndFeel.h"
+#include <memory>
 
 class ChimeraEngineAudioProcessor;
 
@@ -31,6 +32,8 @@ public:
     };
 
 private:
+    class GraphicalEditor;
+
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
@@ -103,6 +106,7 @@ private:
     juce::TextButton sequencerResetButton { "Reset" };
     juce::ToggleButton mpeToggle { "MPE" };
     juce::Label sequencerTickLabel;
+    std::unique_ptr<GraphicalEditor> graphicalEditor;
 
     juce::Rectangle<int> headerBounds;
     juce::Rectangle<int> displayBounds;
