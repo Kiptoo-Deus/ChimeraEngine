@@ -7,6 +7,7 @@
 #include "dsp/SampleZone.h"
 #include "engine/Arpeggiator.h"
 #include "engine/Performance.h"
+#include "engine/SampleLibrary.h"
 #include "engine/Sequencer.h"
 #include "engine/VoiceAllocator.h"
 #include "fx/FxChain.h"
@@ -100,6 +101,33 @@ void testSamplePlayer()
     for (int i = 0; i < 16; ++i)
         player.process();
     assert(player.getPosition() > firstPosition * 0.05);
+}
+
+void testSampleLibrary()
+{
+    static_assert(chimera::engine::SampleLibrary::factoryWaveformSlots == 3977);
+    static_assert(chimera::engine::SampleLibrary::factoryRomBytes == 741ull * 1024ull * 1024ull);
+    static_assert(chimera::engine::SampleLibrary::userFlashBoards == 2);
+    static_assert(chimera::engine::SampleLibrary::userFlashBoardBytes == 1024ull * 1024ull * 1024ull);
+
+    chimera::engine::SampleLibrary library;
+    assert(library.totalUserCapacityBytes() == 2ull * 1024ull * 1024ull * 1024ull);
+
+    assert(library.addFactoryWaveform({ 1, "Init Sine", "Synth", 1024, 60, 0, 127, 1, 127 }));
+    assert(!library.addFactoryWaveform({ 1, "Duplicate", "Synth", 1024, 60, 0, 127, 1, 127 }));
+    assert(!library.addFactoryWaveform({ 2, "", "Synth", 1024, 60, 0, 127, 1, 127 }));
+    assert(library.factoryWaveformCount() == 1);
+    assert(library.factoryUsedBytes() == 1024);
+
+    assert(library.addUserWaveform(0, { 1001, "User Brass", "Brass", 2048, 60, 36, 96, 1, 127 }));
+    assert(library.addUserWaveform(1, { 2001, "User Pad", "Pad", 4096, 60, 0, 127, 1, 127 }));
+    assert(!library.addUserWaveform(2, { 3001, "No Board", "Pad", 4096, 60, 0, 127, 1, 127 }));
+    assert(!library.addUserWaveform(0, { 3002, "Too Large", "Pad", chimera::engine::SampleLibrary::userFlashBoardBytes, 60, 0, 127, 1, 127 }));
+    assert(library.userWaveformCount(0) == 1);
+    assert(library.userWaveformCount(1) == 1);
+    assert(library.userUsedBytes(0) == 2048);
+    assert(library.findWaveform(2001) != nullptr);
+    assert(library.findWaveform(9999) == nullptr);
 }
 
 void testVoiceAllocator()
@@ -379,6 +407,7 @@ int main()
     testSampleZone();
     testSampleZoneLoadsAudio();
     testSamplePlayer();
+    testSampleLibrary();
     testVoiceAllocator();
     testFilterStability();
     testModulationMatrix();
