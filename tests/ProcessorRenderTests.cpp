@@ -129,6 +129,22 @@ int main()
         }
     }
     assert(sceneChanged);
+    const auto exportDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getChildFile("chimera-engine-tests");
+    exportDir.createDirectory();
+    const auto midiExport = exportDir.getChildFile("processor-song.mid");
+    midiExport.deleteFile();
+    assert(sequencerProcessor.exportCurrentSongToMidi(midiExport).wasOk());
+    assert(midiExport.existsAsFile());
+    ChimeraEngineAudioProcessor importedSongProcessor;
+    importedSongProcessor.prepareToPlay(48000.0, 512);
+    assert(importedSongProcessor.importSongFromMidi(midiExport).wasOk());
+    assert(importedSongProcessor.getCurrentSongNoteCount() > 0);
+    const auto wavExport = exportDir.getChildFile("processor-demo.wav");
+    wavExport.deleteFile();
+    assert(sequencerProcessor.bounceDemoToWav(wavExport, 1.0).wasOk());
+    assert(wavExport.existsAsFile());
+    assert(wavExport.getSize() > 1024);
     sequencerProcessor.resetSequencerPlayback();
     assert(sequencerProcessor.getSequencerTick() == 0);
     assert(sequencerProcessor.getCurrentPerformanceScene() == 0);

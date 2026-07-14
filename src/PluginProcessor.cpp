@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "engine/SequencerIO.h"
 #include "preset/Preset.h"
 #include <algorithm>
 #include <cmath>
@@ -607,6 +608,76 @@ void ChimeraEngineAudioProcessor::setPerformancePart(int performancePartIndex, c
 {
     zone.internalPartIndex = std::clamp(zone.internalPartIndex, 0, static_cast<int>(maxParts) - 1);
     activePerformance.setPart(performancePartIndex, std::move(zone));
+}
+
+int ChimeraEngineAudioProcessor::getCurrentSongNoteCount() const
+{
+    return sequencer.song(0).noteCount();
+}
+
+juce::Result ChimeraEngineAudioProcessor::exportCurrentSongToMidi(const juce::File& file) const
+{
+    if (file == juce::File())
+        return juce::Result::fail("No MIDI export file selected");
+
+    file.getParentDirectory().createDirectory();
+    return chimera::engine::exportSongToMidiFile(sequencer.song(0), file);
+}
+
+juce::Result ChimeraEngineAudioProcessor::importSongFromMidi(const juce::File& file)
+{
+    const auto result = chimera::engine::importSongFromMidiFile(file, sequencer.song(0));
+    if (result.wasOk())
+    {
+        sequencerDemoSeeded = true;
+        resetSequencerPlayback();
+    }
+    return result;
+}
+
+juce::Result ChimeraEngineAudioProcessor::bounceDemoToWav(const juce::File& file, double durationSeconds)
+{
+    if (file == juce::File())
+        return juce::Result::fail("No WAV export file selected");
+
+    file.getParentDirectory().createDirectory();
+    std::unique_ptr<juce::FileOutputStream> stream(file.createOutputStream());
+    if (stream == nullptr || !stream->openedOk())
+        return juce::Result::fail("Could not open WAV file for writing: " + file.getFullPathName());
+
+    juce::WavAudioFormat format;
+    std::unique_ptr<juce::AudioFormatWriter> writer(format.createWriterFor(stream.get(), currentSampleRate, 2, 24, {}, 0));
+    if (writer == nullptr)
+        return juce::Result::fail("Could not create WAV writer: " + file.getFullPathName());
+    stream.release();
+
+    const auto wasPlaying = sequencerPlaybackEnabled;
+    const auto previousTick = sequencerTick;
+    resetSequencerPlayback();
+    sequencerPlaybackEnabled = true;
+
+    constexpr int blockSize = 512;
+    const auto totalSamples = std::max(blockSize, static_cast<int>(std::round(durationSeconds * currentSampleRate)));
+    juce::AudioBuffer<float> renderBuffer(2, blockSize);
+    auto renderedSamples = 0;
+    while (renderedSamples < totalSamples)
+    {
+        const auto blockSamples = std::min(blockSize, totalSamples - renderedSamples);
+        renderBuffer.setSize(2, blockSamples, false, false, true);
+        juce::MidiBuffer midi;
+        processBlock(renderBuffer, midi);
+        if (!writer->writeFromAudioSampleBuffer(renderBuffer, 0, blockSamples))
+        {
+            sequencerPlaybackEnabled = wasPlaying;
+            sequencerTick = previousTick;
+            return juce::Result::fail("Could not write WAV audio: " + file.getFullPathName());
+        }
+        renderedSamples += blockSamples;
+    }
+
+    sequencerPlaybackEnabled = wasPlaying;
+    sequencerTick = previousTick;
+    return juce::Result::ok();
 }
 
 juce::Result ChimeraEngineAudioProcessor::loadPatchFileForPart(int partIndex, const juce::File& patchFile)

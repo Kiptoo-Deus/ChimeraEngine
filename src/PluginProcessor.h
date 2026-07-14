@@ -72,6 +72,10 @@ public:
     void applyPerformanceScene(int sceneIndex);
     void setMpeExpressionEnabled(bool shouldBeEnabled) { mpeExpressionEnabled = shouldBeEnabled; }
     bool isMpeExpressionEnabled() const { return mpeExpressionEnabled; }
+    int getCurrentSongNoteCount() const;
+    juce::Result exportCurrentSongToMidi(const juce::File& file) const;
+    juce::Result importSongFromMidi(const juce::File& file);
+    juce::Result bounceDemoToWav(const juce::File& file, double durationSeconds);
     static constexpr int getPartCount() { return static_cast<int>(maxParts); }
     static constexpr int getMaxVoiceCount() { return static_cast<int>(maxVoices); }
 

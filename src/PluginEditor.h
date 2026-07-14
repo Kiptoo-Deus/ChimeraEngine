@@ -17,6 +17,19 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
 
+    enum class WorkstationPage
+    {
+        Voice,
+        Performance,
+        Mix,
+        Arp,
+        Song,
+        Pattern,
+        Sample,
+        Utility,
+        Demo
+    };
+
 private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
@@ -39,6 +52,10 @@ private:
     juce::TextButton& addPresetButton(juce::Component& parent, const juce::String& presetName);
     juce::TextButton& addModeButton(const juce::String& name);
     juce::Label& addPanelLabel(const juce::String& text, juce::Justification justification = juce::Justification::centredLeft);
+    void addPageSurfaceControls();
+    void setActivePage(WorkstationPage page);
+    void refreshPageSurface();
+    void setPageSurfaceVisible(bool shouldBeVisible);
     void addPartMixerControls();
     void refreshPartMixerControls();
     void addFxControls();
@@ -70,8 +87,16 @@ private:
     juce::OwnedArray<juce::ComboBox> fxInsertBoxes;
     juce::OwnedArray<juce::Slider> fxSendSliders;
     juce::OwnedArray<juce::Slider> masterFxSliders;
+    juce::OwnedArray<juce::Label> pageLabels;
+    juce::OwnedArray<juce::TextButton> pageActionButtons;
     juce::OwnedArray<SliderAttachment> sliderAttachments;
     juce::OwnedArray<ButtonAttachment> buttonAttachments;
+    juce::TextEditor presetSearch;
+    juce::ComboBox presetCategoryBox;
+    juce::ComboBox presetBrowserBox;
+    juce::ComboBox performanceBrowserBox;
+    juce::ComboBox sampleSlotBox;
+    juce::ToggleButton favouriteToggle { "Fav" };
     juce::ToggleButton arpToggle;
     juce::TextButton demoSequenceButton { "Demo" };
     juce::TextButton sequencerPlayButton { "Play" };
@@ -89,4 +114,5 @@ private:
     juce::Rectangle<int> presetBounds;
     juce::Rectangle<int> mixerBounds;
     juce::Rectangle<int> elementMonitorBounds;
+    WorkstationPage activePage = WorkstationPage::Demo;
 };

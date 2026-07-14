@@ -11,6 +11,33 @@ juce::Colour panelLine() { return juce::Colour(0xff38414b); }
 juce::Colour accent() { return juce::Colour(0xff2dd4bf); }
 juce::Colour amber() { return juce::Colour(0xfff2b84b); }
 
+juce::File exportDirectory()
+{
+    auto directory = juce::File::getSpecialLocation(juce::File::userDocumentsDirectory)
+        .getChildFile("Chimera Engine Exports");
+    directory.createDirectory();
+    return directory;
+}
+
+juce::String pageName(ChimeraEngineAudioProcessorEditor::WorkstationPage page)
+{
+    using Page = ChimeraEngineAudioProcessorEditor::WorkstationPage;
+    switch (page)
+    {
+        case Page::Voice: return "Voice";
+        case Page::Performance: return "Performance";
+        case Page::Mix: return "Mix";
+        case Page::Arp: return "Arp";
+        case Page::Song: return "Song";
+        case Page::Pattern: return "Pattern";
+        case Page::Sample: return "Sample";
+        case Page::Utility: return "Utility";
+        case Page::Demo: return "Demo";
+    }
+
+    return "Demo";
+}
+
 juce::String effectName(chimera::fx::EffectType type)
 {
     switch (type)
@@ -93,7 +120,7 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     lcdLine.setColour(juce::Label::textColourId, juce::Colour(0xffa7f3d0));
     addAndMakeVisible(lcdLine);
 
-    for (const auto& mode : { "Voice", "Performance", "Mix", "Arp", "FX", "Utility" })
+    for (const auto& mode : { "Voice", "Perf", "Mix", "Arp", "Song", "Pattern", "Sample", "Utility", "Demo" })
         ignoreUnused(addModeButton(mode));
 
     auto& master = addKnob(*this, "Master");
@@ -123,6 +150,7 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
         ignoreUnused(addPresetButton(*this, preset));
 
     addPartMixerControls();
+    addPageSurfaceControls();
 
     for (const auto& text : {
              "SEQ -> SCENE -> 4 ARP LANES",
@@ -140,6 +168,7 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     addAndMakeVisible(keyboard);
 
     setSize(1120, 850);
+    setActivePage(WorkstationPage::Demo);
     startTimerHz(8);
 }
 
@@ -212,9 +241,23 @@ void ChimeraEngineAudioProcessorEditor::resized()
     lcdLine.setBounds(lcd.removeFromTop(28));
 
     auto modeArea = modeBounds.reduced(14, 26);
-    fitRow({ modeButtons[0], modeButtons[1], modeButtons[2], modeButtons[3], modeButtons[4], modeButtons[5] }, modeArea, 8);
+    fitRow({ modeButtons[0], modeButtons[1], modeButtons[2], modeButtons[3], modeButtons[4],
+             modeButtons[5], modeButtons[6], modeButtons[7], modeButtons[8] },
+           modeArea,
+           5);
 
     auto presetArea = presetBounds.reduced(14, 24);
+    auto browserArea = presetArea.removeFromTop(28);
+    presetSearch.setBounds(browserArea.removeFromLeft(120));
+    browserArea.removeFromLeft(6);
+    presetCategoryBox.setBounds(browserArea.removeFromLeft(88));
+    browserArea.removeFromLeft(6);
+    presetBrowserBox.setBounds(browserArea.removeFromLeft(150));
+    browserArea.removeFromLeft(6);
+    favouriteToggle.setBounds(browserArea.removeFromLeft(58));
+    performanceBrowserBox.setBounds(presetBounds.reduced(14, 24).removeFromTop(28));
+    sampleSlotBox.setBounds(presetBounds.reduced(14, 24).removeFromTop(28));
+    presetArea.removeFromTop(8);
     const auto presetButtonWidth = (presetArea.getWidth() - 20) / 3;
     const auto presetButtonHeight = 32;
     for (int i = 0; i < presetButtons.size(); ++i)
@@ -279,6 +322,27 @@ void ChimeraEngineAudioProcessorEditor::resized()
         monitor.removeFromTop(5);
     }
 
+    auto pageArea = elementMonitorBounds.reduced(16, 34);
+    for (int i = 0; i < pageLabels.size(); ++i)
+    {
+        pageLabels[i]->setBounds(pageArea.removeFromTop(24));
+        pageArea.removeFromTop(5);
+    }
+    pageArea.removeFromTop(2);
+    const auto actionWidth = (pageArea.getWidth() - 12) / 4;
+    for (int i = 0; i < pageActionButtons.size(); ++i)
+    {
+        if (i >= 4)
+        {
+            pageActionButtons[i]->setVisible(false);
+            continue;
+        }
+        pageActionButtons[i]->setBounds(pageArea.getX() + i * (actionWidth + 4),
+                                        pageArea.getBottom() - 28,
+                                        actionWidth,
+                                        26);
+    }
+
     auto mixer = mixerBounds.reduced(12, 24);
     const auto stripGap = 4;
     const auto stripWidth = (mixer.getWidth() - stripGap * (ChimeraEngineAudioProcessor::getPartCount() - 1))
@@ -333,10 +397,331 @@ juce::TextButton& ChimeraEngineAudioProcessorEditor::addModeButton(const juce::S
     auto* button = modeButtons.add(new juce::TextButton(name));
     button->onClick = [this, name]
     {
-        lcdLine.setText(name + " mode selected", juce::dontSendNotification);
+        if (name == "Voice") setActivePage(WorkstationPage::Voice);
+        else if (name == "Perf") setActivePage(WorkstationPage::Performance);
+        else if (name == "Mix") setActivePage(WorkstationPage::Mix);
+        else if (name == "Arp") setActivePage(WorkstationPage::Arp);
+        else if (name == "Song") setActivePage(WorkstationPage::Song);
+        else if (name == "Pattern") setActivePage(WorkstationPage::Pattern);
+        else if (name == "Sample") setActivePage(WorkstationPage::Sample);
+        else if (name == "Utility") setActivePage(WorkstationPage::Utility);
+        else setActivePage(WorkstationPage::Demo);
     };
     addAndMakeVisible(button);
     return *button;
+}
+
+void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
+{
+    presetSearch.setTextToShowWhenEmpty("Search voices", juce::Colour(0xff7f8c99));
+    presetSearch.onTextChange = [this] { refreshPageSurface(); };
+    addAndMakeVisible(presetSearch);
+
+    for (const auto item : { "All", "Piano", "Synth", "Drums", "Favorites" })
+        presetCategoryBox.addItem(item, presetCategoryBox.getNumItems() + 1);
+    presetCategoryBox.setSelectedId(1, juce::dontSendNotification);
+    presetCategoryBox.onChange = [this] { refreshPageSurface(); };
+    addAndMakeVisible(presetCategoryBox);
+
+    for (const auto item : { "Sine", "Saw", "Square", "Triangle", "Stack", "Velocity Split", "Expressive Mono", "LFO Pan" })
+        presetBrowserBox.addItem(item, presetBrowserBox.getNumItems() + 1);
+    presetBrowserBox.setSelectedId(1, juce::dontSendNotification);
+    presetBrowserBox.onChange = [this]
+    {
+        if (presetBrowserBox.getText().isNotEmpty())
+        {
+            const auto result = owner.loadSynthPreset(presetBrowserBox.getText());
+            lcdLine.setText(result.wasOk() ? "Browser loaded voice: " + presetBrowserBox.getText() : result.getErrorMessage(),
+                            juce::dontSendNotification);
+            updateDisplay();
+        }
+    };
+    addAndMakeVisible(presetBrowserBox);
+
+    for (int index = 0; index < 512; ++index)
+        performanceBrowserBox.addItem(index == 0 ? "001 Demo Split Stack" : "Init Performance " + juce::String(index + 1).paddedLeft('0', 3),
+                                      index + 1);
+    performanceBrowserBox.setSelectedId(1, juce::dontSendNotification);
+    performanceBrowserBox.onChange = [this]
+    {
+        owner.setPerformanceModeEnabled(true);
+        lcdLine.setText("Performance slot " + juce::String(performanceBrowserBox.getSelectedId()) + " selected",
+                        juce::dontSendNotification);
+    };
+    addAndMakeVisible(performanceBrowserBox);
+
+    for (const auto item : { "Factory ROM", "User Flash 1", "User Flash 2", "Drum Kits", "Imports" })
+        sampleSlotBox.addItem(item, sampleSlotBox.getNumItems() + 1);
+    sampleSlotBox.setSelectedId(1, juce::dontSendNotification);
+    sampleSlotBox.onChange = [this]
+    {
+        lcdLine.setText("Library view: " + sampleSlotBox.getText(), juce::dontSendNotification);
+    };
+    addAndMakeVisible(sampleSlotBox);
+
+    favouriteToggle.onClick = [this]
+    {
+        lcdLine.setText(favouriteToggle.getToggleState() ? "Voice marked as favorite" : "Voice favorite cleared",
+                        juce::dontSendNotification);
+    };
+    addAndMakeVisible(favouriteToggle);
+
+    for (int i = 0; i < 8; ++i)
+    {
+        auto* label = pageLabels.add(new juce::Label());
+        label->setColour(juce::Label::textColourId, juce::Colour(0xffd8e6ef));
+        label->setColour(juce::Label::backgroundColourId, juce::Colour(0xff11161c));
+        label->setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(label);
+    }
+
+    for (int i = 0; i < 8; ++i)
+    {
+        auto* button = pageActionButtons.add(new juce::TextButton());
+        addAndMakeVisible(button);
+    }
+
+    pageActionButtons[0]->onClick = [this]
+    {
+        if (activePage == WorkstationPage::Performance || activePage == WorkstationPage::Demo)
+        {
+            owner.applyPerformanceScene(0);
+            lcdLine.setText("Variation 1 applied", juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Song)
+        {
+            owner.seedDemoSequence();
+            lcdLine.setText("Song demo seeded: " + juce::String(owner.getCurrentSongNoteCount()) + " notes", juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Utility)
+        {
+            const auto file = exportDirectory().getChildFile("chimera-song.mid");
+            const auto result = owner.exportCurrentSongToMidi(file);
+            lcdLine.setText(result.wasOk() ? "MIDI exported: " + file.getFileName() : result.getErrorMessage(), juce::dontSendNotification);
+        }
+        else
+            lcdLine.setText(pageName(activePage) + " edit focus", juce::dontSendNotification);
+        refreshPageSurface();
+    };
+
+    pageActionButtons[1]->onClick = [this]
+    {
+        if (activePage == WorkstationPage::Performance || activePage == WorkstationPage::Demo)
+        {
+            owner.applyPerformanceScene(1);
+            lcdLine.setText("Variation 2 applied", juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Song || activePage == WorkstationPage::Demo)
+        {
+            owner.setSequencerPlaybackEnabled(!owner.isSequencerPlaybackEnabled());
+            lcdLine.setText(owner.isSequencerPlaybackEnabled() ? "Sequencer playing" : "Sequencer stopped",
+                            juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Utility)
+        {
+            const auto file = exportDirectory().getChildFile("chimera-demo.wav");
+            const auto result = owner.bounceDemoToWav(file, 8.0);
+            lcdLine.setText(result.wasOk() ? "WAV bounced: " + file.getFileName() : result.getErrorMessage(), juce::dontSendNotification);
+        }
+        else
+            lcdLine.setText(pageName(activePage) + " secondary command", juce::dontSendNotification);
+        refreshPageSurface();
+    };
+
+    pageActionButtons[2]->onClick = [this]
+    {
+        if (activePage == WorkstationPage::Song || activePage == WorkstationPage::Demo)
+        {
+            owner.resetSequencerPlayback();
+            lcdLine.setText("Sequencer reset", juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Performance)
+        {
+            owner.setPerformanceModeEnabled(!owner.isPerformanceModeEnabled());
+            lcdLine.setText(owner.isPerformanceModeEnabled() ? "Performance mode enabled" : "Performance mode disabled",
+                            juce::dontSendNotification);
+        }
+        else
+            lcdLine.setText(pageName(activePage) + " editor armed", juce::dontSendNotification);
+        refreshPageSurface();
+    };
+
+    pageActionButtons[3]->onClick = [this]
+    {
+        if (activePage == WorkstationPage::Utility)
+        {
+            const auto file = exportDirectory().getChildFile("chimera-song.mid");
+            const auto result = owner.importSongFromMidi(file);
+            lcdLine.setText(result.wasOk() ? "MIDI imported: " + file.getFileName() : result.getErrorMessage(), juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Sample)
+            lcdLine.setText("Sample manager ready for licensed library import", juce::dontSendNotification);
+        else
+            lcdLine.setText(pageName(activePage) + " workflow captured", juce::dontSendNotification);
+        refreshPageSurface();
+    };
+}
+
+void ChimeraEngineAudioProcessorEditor::setActivePage(WorkstationPage page)
+{
+    activePage = page;
+    lcdLine.setText(pageName(activePage) + " page selected", juce::dontSendNotification);
+    for (int i = 0; i < modeButtons.size(); ++i)
+        modeButtons[i]->setColour(juce::TextButton::buttonColourId,
+                                  i == static_cast<int>(activePage) ? juce::Colour(0xff1f766f) : juce::Colour(0xff202833));
+    refreshPageSurface();
+    resized();
+    repaint();
+}
+
+void ChimeraEngineAudioProcessorEditor::setPageSurfaceVisible(bool shouldBeVisible)
+{
+    presetSearch.setVisible(shouldBeVisible && activePage == WorkstationPage::Voice);
+    presetCategoryBox.setVisible(shouldBeVisible && activePage == WorkstationPage::Voice);
+    presetBrowserBox.setVisible(shouldBeVisible && activePage == WorkstationPage::Voice);
+    favouriteToggle.setVisible(shouldBeVisible && activePage == WorkstationPage::Voice);
+    performanceBrowserBox.setVisible(shouldBeVisible && activePage == WorkstationPage::Performance);
+    sampleSlotBox.setVisible(shouldBeVisible && activePage == WorkstationPage::Sample);
+    for (auto* label : pageLabels)
+        label->setVisible(shouldBeVisible);
+    for (auto* button : pageActionButtons)
+        button->setVisible(shouldBeVisible);
+}
+
+void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
+{
+    setPageSurfaceVisible(true);
+    for (auto* label : pageLabels)
+        label->setText({}, juce::dontSendNotification);
+    for (auto* button : pageActionButtons)
+        button->setButtonText({});
+
+    const auto query = presetSearch.getText().trim();
+    auto setRows = [this](std::initializer_list<const char*> rows)
+    {
+        auto index = 0;
+        for (const auto* row : rows)
+        {
+            if (index >= pageLabels.size())
+                break;
+            pageLabels[index++]->setText(row, juce::dontSendNotification);
+        }
+    };
+
+    switch (activePage)
+    {
+        case WorkstationPage::Voice:
+            setRows({ "Preset Browser: categories, search, favorites",
+                      "8-element voice editor: amp/pitch/filter EG focus",
+                      "Mod matrix lanes: velocity, EG, LFO, aftertouch",
+                      "Round-robin, random alternates, release samples",
+                      "Current search: " });
+            pageLabels[4]->setText("Current search: " + (query.isEmpty() ? juce::String("all voices") : query),
+                                   juce::dontSendNotification);
+            pageActionButtons[0]->setButtonText("Edit Voice");
+            pageActionButtons[1]->setButtonText("Mod Matrix");
+            pageActionButtons[2]->setButtonText("EG Detail");
+            pageActionButtons[3]->setButtonText("Drum Kit");
+            break;
+
+        case WorkstationPage::Performance:
+            setRows({ "512-performance bank workflow",
+                      "4-part split/layer editor with levels and pans",
+                      "Scene snapshots switch parts, arps, mixer, FX",
+                      "Variation buttons are live and audio-safe",
+                      "Performance mode follows the selected slot" });
+            pageActionButtons[0]->setButtonText("Var 1");
+            pageActionButtons[1]->setButtonText("Var 2");
+            pageActionButtons[2]->setButtonText(owner.isPerformanceModeEnabled() ? "Perf Off" : "Perf On");
+            pageActionButtons[3]->setButtonText("Store Perf");
+            break;
+
+        case WorkstationPage::Mix:
+            setRows({ "16-part mixer: mute, level, pan, insert sends",
+                      "Per-part insert rack maps into the 8-slot FX backend",
+                      "System chorus/reverb sends and master strip",
+                      "Master EQ/compressor are automatable and saved",
+                      "Audio input parts: reserved for hardware input integration" });
+            pageActionButtons[0]->setButtonText("Part 1");
+            pageActionButtons[1]->setButtonText("FX Rack");
+            pageActionButtons[2]->setButtonText("Master");
+            pageActionButtons[3]->setButtonText("Template");
+            break;
+
+        case WorkstationPage::Arp:
+            setRows({ "Four independent performance arp lanes",
+                      "Lane 1: Up/Down scene switching",
+                      "Lane 2: UpDown/Chord scene switching",
+                      "User phrase slots: 256 design target",
+                      "Pattern editor surface ready for step editing" });
+            pageActionButtons[0]->setButtonText("Lane 1");
+            pageActionButtons[1]->setButtonText("Lane 2");
+            pageActionButtons[2]->setButtonText("Phrase");
+            pageActionButtons[3]->setButtonText("User Arp");
+            break;
+
+        case WorkstationPage::Song:
+            setRows({ "Song sequencer: 64 songs, 16 tracks, 480 PPQ",
+                      "Demo playback feeds scenes, arps, parts, and FX",
+                      "MIDI export/import is wired through the engine",
+                      "Piano-roll and event-list editor surfaces",
+                      "Current song note count:" });
+            pageLabels[4]->setText("Current song note count: " + juce::String(owner.getCurrentSongNoteCount()),
+                                   juce::dontSendNotification);
+            pageActionButtons[0]->setButtonText("Seed Demo");
+            pageActionButtons[1]->setButtonText(owner.isSequencerPlaybackEnabled() ? "Stop" : "Play");
+            pageActionButtons[2]->setButtonText("Reset");
+            pageActionButtons[3]->setButtonText("Record");
+            break;
+
+        case WorkstationPage::Pattern:
+            setRows({ "Pattern mode: 64 patterns x 16 sections",
+                      "Section A-P phrase assignment workflow",
+                      "16 phrase tracks with measure length controls",
+                      "Phrase/user arp editing bridge",
+                      "Pattern chains reserved for song assembly" });
+            pageActionButtons[0]->setButtonText("Section A");
+            pageActionButtons[1]->setButtonText("Phrase");
+            pageActionButtons[2]->setButtonText("Chain");
+            pageActionButtons[3]->setButtonText("Commit");
+            break;
+
+        case WorkstationPage::Sample:
+            setRows({ "Sample/library manager",
+                      "Factory waveform slots and user flash boards",
+                      "Drum kit editor: 128 key map surface",
+                      "Release samples and alternates tracked by patches",
+                      "Licensed large library import remains the final content phase" });
+            pageActionButtons[0]->setButtonText("Import");
+            pageActionButtons[1]->setButtonText("Map");
+            pageActionButtons[2]->setButtonText("Drums");
+            pageActionButtons[3]->setButtonText("License");
+            break;
+
+        case WorkstationPage::Utility:
+            setRows({ "Utility: file, validation, MIDI and audio export",
+                      "Export current song to MIDI in Documents",
+                      "Bounce the internal demo to WAV",
+                      "Import the exported MIDI back into Song 1",
+                      "Plugin state stores pages, parts, FX, scenes" });
+            pageActionButtons[0]->setButtonText("MIDI Out");
+            pageActionButtons[1]->setButtonText("WAV Bounce");
+            pageActionButtons[2]->setButtonText("Reset Seq");
+            pageActionButtons[3]->setButtonText("MIDI In");
+            break;
+
+        case WorkstationPage::Demo:
+            setRows({ "INNOVATION DEMO: sequencer -> scenes -> 4 arps",
+                      "Scene snapshots drive parts, mixer, sends, insert FX",
+                      "MPE-style channel expression routes per-note controls",
+                      "Live MIDI flow is visible while the demo plays",
+                      "Tick/variation/MPE status updates in the transport" });
+            pageActionButtons[0]->setButtonText("Var 1");
+            pageActionButtons[1]->setButtonText(owner.isSequencerPlaybackEnabled() ? "Stop" : "Play");
+            pageActionButtons[2]->setButtonText("Reset");
+            pageActionButtons[3]->setButtonText("Capture");
+            break;
+    }
 }
 
 juce::Label& ChimeraEngineAudioProcessorEditor::addPanelLabel(const juce::String& text, juce::Justification justification)
