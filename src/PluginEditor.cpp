@@ -47,7 +47,7 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     patchDisplay.setFont(juce::FontOptions(24.0f, juce::Font::bold));
     addAndMakeVisible(patchDisplay);
 
-    categoryDisplay.setText("VOICE/PERFORMANCE/SEQ/FX/SAMPLE  |  3977 WAVES  |  2 FLASH BOARDS", juce::dontSendNotification);
+    categoryDisplay.setText("VOICE BANKS  |  2176 VOICE SLOTS  |  129 DRUM KIT SLOTS", juce::dontSendNotification);
     categoryDisplay.setJustificationType(juce::Justification::centredLeft);
     categoryDisplay.setColour(juce::Label::textColourId, juce::Colour(0xffd8f7f1));
     addAndMakeVisible(categoryDisplay);

@@ -50,6 +50,7 @@ target_sources(ChimeraEngine PRIVATE
     src/fx/FxChain.cpp
     src/gui/LookAndFeel.cpp
     src/preset/Preset.cpp
+    src/preset/VoiceBank.cpp
 )
 
 target_include_directories(ChimeraEngine PRIVATE src)
@@ -90,6 +91,7 @@ add_executable(ChimeraEngineTests
     src/engine/VoiceAllocator.cpp
     src/fx/FxChain.cpp
     src/preset/Preset.cpp
+    src/preset/VoiceBank.cpp
 )
 
 target_include_directories(ChimeraEngineTests PRIVATE src)
@@ -116,6 +118,7 @@ add_executable(ChimeraEngineProcessorTests
     src/fx/FxChain.cpp
     src/gui/LookAndFeel.cpp
     src/preset/Preset.cpp
+    src/preset/VoiceBank.cpp
 )
 
 target_include_directories(ChimeraEngineProcessorTests PRIVATE src)

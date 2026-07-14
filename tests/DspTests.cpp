@@ -12,6 +12,7 @@
 #include "engine/VoiceAllocator.h"
 #include "fx/FxChain.h"
 #include "preset/Preset.h"
+#include "preset/VoiceBank.h"
 
 #include <cassert>
 #include <cmath>
@@ -398,6 +399,71 @@ void testPresetLoader()
     assert(patch.elements[0].filterType == "highPass12");
     temp.deleteFile();
 }
+
+void testVoiceBank()
+{
+    static_assert(chimera::preset::VoiceBank::presetNormalSlots == 1024);
+    static_assert(chimera::preset::VoiceBank::presetDrumSlots == 64);
+    static_assert(chimera::preset::VoiceBank::gmNormalSlots == 128);
+    static_assert(chimera::preset::VoiceBank::gmDrumSlots == 1);
+    static_assert(chimera::preset::VoiceBank::userBankCount == 4);
+    static_assert(chimera::preset::VoiceBank::userNormalSlotsPerBank == 128);
+    static_assert(chimera::preset::VoiceBank::userDrumSlots == 32);
+    static_assert(chimera::preset::VoiceBank::totalNormalVoiceSlots == 2176);
+    static_assert(chimera::preset::VoiceBank::totalDrumKitSlots == 129);
+
+    chimera::preset::VoiceBank bank;
+    assert(bank.setVoice({ chimera::preset::VoiceBankId::Preset,
+                           chimera::preset::VoiceKind::Normal,
+                           0,
+                           "Init Piano",
+                           "Piano",
+                           "presets/Synth/Sine.chpatch" }));
+    assert(bank.setVoice({ chimera::preset::VoiceBankId::User1,
+                           chimera::preset::VoiceKind::Normal,
+                           127,
+                           "Layer Stack",
+                           "Synth",
+                           "presets/Synth/Stack.chpatch" }));
+    assert(bank.setVoice({ chimera::preset::VoiceBankId::Preset,
+                           chimera::preset::VoiceKind::DrumKit,
+                           63,
+                           "Init Kit",
+                           "Drums",
+                           "" }));
+    assert(!bank.setVoice({ chimera::preset::VoiceBankId::User1,
+                            chimera::preset::VoiceKind::DrumKit,
+                            0,
+                            "Wrong Kind",
+                            "Drums",
+                            "" }));
+    assert(!bank.setVoice({ chimera::preset::VoiceBankId::Preset,
+                            chimera::preset::VoiceKind::Normal,
+                            1024,
+                            "Out Of Range",
+                            "Piano",
+                            "" }));
+    assert(bank.voiceCount() == 3);
+
+    const auto synths = bank.findByCategory("Synth");
+    assert(synths.size() == 1);
+    assert(synths[0].name == "Layer Stack");
+
+    auto preset = bank.getVoice(chimera::preset::VoiceBankId::Preset, chimera::preset::VoiceKind::Normal, 0);
+    assert(preset.has_value());
+    assert(preset->name == "Init Piano");
+
+    assert(bank.setVoice({ chimera::preset::VoiceBankId::Preset,
+                           chimera::preset::VoiceKind::Normal,
+                           0,
+                           "Updated Piano",
+                           "Piano",
+                           "presets/Synth/Triangle.chpatch" }));
+    assert(bank.voiceCount() == 3);
+    preset = bank.getVoice(chimera::preset::VoiceBankId::Preset, chimera::preset::VoiceKind::Normal, 0);
+    assert(preset.has_value());
+    assert(preset->name == "Updated Piano");
+}
 }
 
 int main()
@@ -417,6 +483,7 @@ int main()
     testSequencer();
     testFxProcessors();
     testPresetLoader();
+    testVoiceBank();
     std::cout << "DSP tests passed\n";
     return 0;
 }
