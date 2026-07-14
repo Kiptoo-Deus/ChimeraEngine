@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 
 #include <array>
+#include <cmath>
 
 namespace
 {
@@ -83,6 +84,8 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     for (const auto& preset : { "Sine", "Saw", "Square", "Triangle", "Stack", "Velocity Split" })
         ignoreUnused(addPresetButton(*this, preset));
 
+    addPartMixerControls();
+
     for (const auto& text : {
              "Element 1  OSC  Pan L  Fine -7",
              "Element 2  OSC  Pan R  Fine +7",
@@ -98,7 +101,7 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     keyboard.setScrollButtonsVisible(false);
     addAndMakeVisible(keyboard);
 
-    setSize(1120, 720);
+    setSize(1120, 760);
     startTimerHz(8);
 }
 
@@ -121,6 +124,7 @@ void ChimeraEngineAudioProcessorEditor::paint(juce::Graphics& g)
     drawPanel(g, PanelId::Effects, "Effects");
     drawPanel(g, PanelId::Performance, "Arpeggiator");
     drawPanel(g, PanelId::Presets, "Voice Select");
+    drawPanel(g, PanelId::Mixer, "16-Part Mixer");
     drawPanel(g, PanelId::ElementMonitor, "Element Monitor");
 
     auto keyboardFrame = keyboard.getBounds().expanded(8, 10);
@@ -155,6 +159,8 @@ void ChimeraEngineAudioProcessorEditor::resized()
     middle.removeFromLeft(12);
     elementMonitorBounds = middle;
 
+    mixerBounds = area.removeFromTop(86);
+    area.removeFromTop(8);
     keyboard.setBounds(area.removeFromBottom(104).reduced(8, 12));
 
     title.setBounds(headerBounds.reduced(18, 6).removeFromLeft(420));
@@ -205,6 +211,24 @@ void ChimeraEngineAudioProcessorEditor::resized()
 
         labels[i]->setBounds(monitor.removeFromTop(24));
         monitor.removeFromTop(5);
+    }
+
+    auto mixer = mixerBounds.reduced(12, 24);
+    const auto stripGap = 4;
+    const auto stripWidth = (mixer.getWidth() - stripGap * (ChimeraEngineAudioProcessor::getPartCount() - 1))
+        / ChimeraEngineAudioProcessor::getPartCount();
+    for (int part = 0; part < ChimeraEngineAudioProcessor::getPartCount(); ++part)
+    {
+        auto strip = mixer.removeFromLeft(stripWidth);
+        auto* enable = partEnableButtons[part];
+        auto* level = partLevelSliders[part];
+        auto* pan = partPanSliders[part];
+        enable->setBounds(strip.removeFromTop(20));
+        strip.removeFromTop(2);
+        level->setBounds(strip.removeFromTop(30));
+        strip.removeFromTop(2);
+        pan->setBounds(strip.removeFromTop(12));
+        mixer.removeFromLeft(stripGap);
     }
 }
 
@@ -260,6 +284,68 @@ juce::Label& ChimeraEngineAudioProcessorEditor::addPanelLabel(const juce::String
     return *label;
 }
 
+void ChimeraEngineAudioProcessorEditor::addPartMixerControls()
+{
+    for (int part = 0; part < ChimeraEngineAudioProcessor::getPartCount(); ++part)
+    {
+        auto* enable = partEnableButtons.add(new juce::ToggleButton(juce::String(part + 1)));
+        enable->setToggleState(owner.isPartEnabled(part), juce::dontSendNotification);
+        enable->setColour(juce::ToggleButton::tickColourId, accent());
+        enable->setColour(juce::ToggleButton::textColourId, juce::Colour(0xffdbeafe));
+        enable->onClick = [this, part]
+        {
+            owner.setPartMix(part,
+                             owner.getPartLevel(part),
+                             owner.getPartPan(part),
+                             partEnableButtons[part]->getToggleState());
+            lcdLine.setText("Part " + juce::String(part + 1) + (owner.isPartEnabled(part) ? " enabled" : " muted"),
+                            juce::dontSendNotification);
+        };
+        addAndMakeVisible(enable);
+
+        auto* level = partLevelSliders.add(new juce::Slider(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox));
+        level->setRange(0.0, 1.5, 0.01);
+        level->setValue(owner.getPartLevel(part), juce::dontSendNotification);
+        level->setColour(juce::Slider::trackColourId, accent());
+        level->setColour(juce::Slider::thumbColourId, juce::Colour(0xfff2b84b));
+        level->onValueChange = [this, part]
+        {
+            owner.setPartMix(part,
+                             static_cast<float>(partLevelSliders[part]->getValue()),
+                             owner.getPartPan(part),
+                             owner.isPartEnabled(part));
+        };
+        addAndMakeVisible(level);
+
+        auto* pan = partPanSliders.add(new juce::Slider(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox));
+        pan->setRange(-1.0, 1.0, 0.01);
+        pan->setValue(owner.getPartPan(part), juce::dontSendNotification);
+        pan->setColour(juce::Slider::trackColourId, juce::Colour(0xff64748b));
+        pan->setColour(juce::Slider::thumbColourId, accent());
+        pan->onValueChange = [this, part]
+        {
+            owner.setPartMix(part,
+                             owner.getPartLevel(part),
+                             static_cast<float>(partPanSliders[part]->getValue()),
+                             owner.isPartEnabled(part));
+        };
+        addAndMakeVisible(pan);
+    }
+}
+
+void ChimeraEngineAudioProcessorEditor::refreshPartMixerControls()
+{
+    for (int part = 0; part < ChimeraEngineAudioProcessor::getPartCount(); ++part)
+    {
+        if (partEnableButtons[part]->getToggleState() != owner.isPartEnabled(part))
+            partEnableButtons[part]->setToggleState(owner.isPartEnabled(part), juce::dontSendNotification);
+        if (std::abs(static_cast<float>(partLevelSliders[part]->getValue()) - owner.getPartLevel(part)) > 0.001f)
+            partLevelSliders[part]->setValue(owner.getPartLevel(part), juce::dontSendNotification);
+        if (std::abs(static_cast<float>(partPanSliders[part]->getValue()) - owner.getPartPan(part)) > 0.001f)
+            partPanSliders[part]->setValue(owner.getPartPan(part), juce::dontSendNotification);
+    }
+}
+
 void ChimeraEngineAudioProcessorEditor::drawPanel(juce::Graphics& g, PanelId panel, const juce::String& panelTitle)
 {
     const auto bounds = [this, panel]
@@ -274,6 +360,7 @@ void ChimeraEngineAudioProcessorEditor::drawPanel(juce::Graphics& g, PanelId pan
             case PanelId::Effects: return effectsBounds;
             case PanelId::Performance: return performanceBounds;
             case PanelId::Presets: return presetBounds;
+            case PanelId::Mixer: return mixerBounds;
             case PanelId::ElementMonitor: return elementMonitorBounds;
         }
 
@@ -321,4 +408,5 @@ void ChimeraEngineAudioProcessorEditor::handleNoteOff(juce::MidiKeyboardState*, 
 void ChimeraEngineAudioProcessorEditor::timerCallback()
 {
     updateDisplay();
+    refreshPartMixerControls();
 }

@@ -31,6 +31,7 @@ private:
         Effects,
         Performance,
         Presets,
+        Mixer,
         ElementMonitor
     };
 
@@ -38,6 +39,8 @@ private:
     juce::TextButton& addPresetButton(juce::Component& parent, const juce::String& presetName);
     juce::TextButton& addModeButton(const juce::String& name);
     juce::Label& addPanelLabel(const juce::String& text, juce::Justification justification = juce::Justification::centredLeft);
+    void addPartMixerControls();
+    void refreshPartMixerControls();
     void drawPanel(juce::Graphics& g, PanelId panel, const juce::String& title);
     void updateDisplay();
     void handleNoteOn(juce::MidiKeyboardState*, int midiChannel, int midiNoteNumber, float velocity) override;
@@ -57,6 +60,9 @@ private:
     juce::OwnedArray<juce::Slider> sliders;
     juce::OwnedArray<juce::Label> labels;
     juce::OwnedArray<juce::TextButton> presetButtons;
+    juce::OwnedArray<juce::ToggleButton> partEnableButtons;
+    juce::OwnedArray<juce::Slider> partLevelSliders;
+    juce::OwnedArray<juce::Slider> partPanSliders;
     juce::OwnedArray<SliderAttachment> sliderAttachments;
     juce::OwnedArray<ButtonAttachment> buttonAttachments;
     juce::ToggleButton arpToggle;
@@ -69,5 +75,6 @@ private:
     juce::Rectangle<int> effectsBounds;
     juce::Rectangle<int> performanceBounds;
     juce::Rectangle<int> presetBounds;
+    juce::Rectangle<int> mixerBounds;
     juce::Rectangle<int> elementMonitorBounds;
 };
