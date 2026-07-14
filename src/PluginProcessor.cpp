@@ -115,6 +115,8 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
         voice.age = 0;
         voice.elementCount = 0;
         voice.partIndex = 0;
+        voice.partLevel = 1.0f;
+        voice.partPan = 0.0f;
     }
 
     for (auto& fx : workstationFx)
@@ -436,10 +438,16 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
         const juce::ScopedLock lock(zoneLock);
         if (performanceModeEnabled)
         {
-            for (const auto internalPart : activePerformance.matchingInternalParts(message.getNoteNumber(),
-                                                                                  message.getVelocity(),
-                                                                                  message.getChannel()))
-                startVoice(allocateVoice(), internalPart, message.getNoteNumber(), message.getVelocity());
+            for (int performancePart = 0; performancePart < chimera::engine::Performance::partCount; ++performancePart)
+            {
+                if (!activePerformance.partMatches(performancePart, message.getNoteNumber(),
+                                                   message.getVelocity(), message.getChannel()))
+                    continue;
+
+                const auto& zone = activePerformance.getPart(performancePart);
+                startVoice(allocateVoice(), zone.internalPartIndex, message.getNoteNumber(),
+                           message.getVelocity(), zone.level, zone.pan);
+            }
         }
         else
         {
@@ -456,7 +464,7 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
             if (!hasMatch)
                 return;
 
-            startVoice(allocateVoice(), partIndex, message.getNoteNumber(), message.getVelocity());
+            startVoice(allocateVoice(), partIndex, message.getNoteNumber(), message.getVelocity(), part.level, part.pan);
         }
         return;
     }
@@ -521,7 +529,7 @@ ChimeraEngineAudioProcessor::ActiveVoice& ChimeraEngineAudioProcessor::allocateV
     });
 }
 
-void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int partIndex, int note, int velocity)
+void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int partIndex, int note, int velocity, float level, float pan)
 {
     const auto& part = parts[static_cast<size_t>(std::clamp(partIndex, 0, static_cast<int>(maxParts) - 1))];
     if (!part.enabled)
@@ -531,6 +539,8 @@ void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int partIndex,
     target.note = note;
     target.age = ++voiceAgeCounter;
     target.velocityGain = std::clamp(static_cast<float>(velocity) / 127.0f, 0.0f, 1.0f);
+    target.partLevel = std::clamp(level, 0.0f, 2.0f);
+    target.partPan = std::clamp(pan, -1.0f, 1.0f);
     for (auto& envelope : target.ampEnvelopes)
     {
         envelope.setSampleRate(currentSampleRate);
@@ -664,9 +674,10 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
 
             auto& player = voice.players[static_cast<size_t>(i)];
             const auto filtered = filter.process(player.process());
-            const auto [leftPan, rightPan] = panGains(voice.elementPans[static_cast<size_t>(i)]);
+            const auto [leftPan, rightPan] = panGains(voice.elementPans[static_cast<size_t>(i)] + voice.partPan);
             const auto element = filtered
                 * voice.elementLevels[static_cast<size_t>(i)]
+                * voice.partLevel
                 * amp
                 * voice.velocityGain
                 * gain;

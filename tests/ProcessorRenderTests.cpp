@@ -166,6 +166,16 @@ int main()
     upperPerformanceMidi.addEvent(juce::MidiMessage::noteOn(1, 72, juce::uint8(120)), 0);
     assert(renderAndSum(performanceProcessor, upperPerformanceMidi, 512) > 0.01f);
 
+    ChimeraEngineAudioProcessor pannedPerformanceProcessor;
+    pannedPerformanceProcessor.prepareToPlay(48000.0, 512);
+    pannedPerformanceProcessor.setPerformancePart(0, { 0, 127, 1, 127, 1, true, 0, 1.0f, -1.0f, "Hard Left" });
+    pannedPerformanceProcessor.setPerformanceModeEnabled(true);
+    juce::MidiBuffer pannedPerformanceMidi;
+    pannedPerformanceMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    const auto [performanceLeft, performanceRight] = renderAndChannelSums(pannedPerformanceProcessor, pannedPerformanceMidi, 512);
+    assert(performanceLeft > 0.01f);
+    assert(performanceRight < performanceLeft * 0.2f);
+
     ChimeraEngineAudioProcessor stateSourceProcessor;
     stateSourceProcessor.prepareToPlay(48000.0, 512);
     assert(stateSourceProcessor.loadSynthPresetForPart(1, "Stack").wasOk());

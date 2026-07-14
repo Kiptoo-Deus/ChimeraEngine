@@ -85,6 +85,8 @@ private:
         int note = -1;
         uint64_t age = 0;
         float velocityGain = 0.0f;
+        float partLevel = 1.0f;
+        float partPan = 0.0f;
         bool active = false;
     };
 
@@ -122,7 +124,7 @@ private:
                                   const juce::String& patchName);
     void handleMidiMessage(const juce::MidiMessage& message);
     ActiveVoice& allocateVoice();
-    void startVoice(ActiveVoice& target, int partIndex, int note, int velocity);
+    void startVoice(ActiveVoice& target, int partIndex, int note, int velocity, float level = 1.0f, float pan = 0.0f);
     void advanceArpeggiator();
     void refreshArpeggiatorHeldNotes();
     void stopActiveArpeggiatorNotes();
