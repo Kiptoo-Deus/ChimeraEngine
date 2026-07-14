@@ -53,6 +53,22 @@ int main()
     assert(wetFxSum > 0.01f);
     assert(std::isfinite(wetFxSum));
 
+    ChimeraEngineAudioProcessor configuredFxProcessor;
+    configuredFxProcessor.prepareToPlay(48000.0, 512);
+    configuredFxProcessor.setInsertEffect(0, chimera::fx::EffectType::Phaser);
+    configuredFxProcessor.setInsertEffect(1, chimera::fx::EffectType::Delay);
+    configuredFxProcessor.setSystemFxSends(0.4f, 0.35f);
+    configuredFxProcessor.getParameters().getParameter("fxMix")->setValueNotifyingHost(1.0f);
+    assert(configuredFxProcessor.getInsertEffect(0) == chimera::fx::EffectType::Phaser);
+    assert(configuredFxProcessor.getInsertEffect(1) == chimera::fx::EffectType::Delay);
+    assert(std::abs(configuredFxProcessor.getChorusSend() - 0.4f) < 0.001f);
+    assert(std::abs(configuredFxProcessor.getReverbSend() - 0.35f) < 0.001f);
+    juce::MidiBuffer configuredFxMidi;
+    configuredFxMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    const auto configuredFxSum = renderAndSum(configuredFxProcessor, configuredFxMidi, 512);
+    assert(configuredFxSum > 0.01f);
+    assert(std::isfinite(configuredFxSum));
+
     juce::MidiBuffer chord;
     chord.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
     chord.addEvent(juce::MidiMessage::noteOn(1, 64, juce::uint8(100)), 0);
@@ -206,6 +222,9 @@ int main()
     stateSourceProcessor.prepareToPlay(48000.0, 512);
     assert(stateSourceProcessor.loadSynthPresetForPart(1, "Stack").wasOk());
     stateSourceProcessor.setPartMix(1, 0.5f, -0.75f, true);
+    stateSourceProcessor.setInsertEffect(0, chimera::fx::EffectType::SmallStereo);
+    stateSourceProcessor.setInsertEffect(1, chimera::fx::EffectType::Delay);
+    stateSourceProcessor.setSystemFxSends(0.22f, 0.33f);
     stateSourceProcessor.setPerformancePart(0, { 0, 127, 1, 127, 2, true, 1, 1.0f, 0.0f, "Restored Part" });
     stateSourceProcessor.setPerformanceModeEnabled(true);
     juce::MemoryBlock stateData;
@@ -219,6 +238,10 @@ int main()
     assert(std::abs(restoredStateProcessor.getPartLevel(1) - 0.5f) < 0.001f);
     assert(std::abs(restoredStateProcessor.getPartPan(1) + 0.75f) < 0.001f);
     assert(restoredStateProcessor.isPartEnabled(1));
+    assert(restoredStateProcessor.getInsertEffect(0) == chimera::fx::EffectType::SmallStereo);
+    assert(restoredStateProcessor.getInsertEffect(1) == chimera::fx::EffectType::Delay);
+    assert(std::abs(restoredStateProcessor.getChorusSend() - 0.22f) < 0.001f);
+    assert(std::abs(restoredStateProcessor.getReverbSend() - 0.33f) < 0.001f);
     juce::MidiBuffer restoredPartMidi;
     restoredPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
     assert(renderAndSum(restoredStateProcessor, restoredPartMidi, 512) > 0.01f);

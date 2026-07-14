@@ -53,6 +53,11 @@ public:
     float getPartLevel(int partIndex) const;
     float getPartPan(int partIndex) const;
     bool isPartEnabled(int partIndex) const;
+    void setInsertEffect(int slotIndex, chimera::fx::EffectType type);
+    chimera::fx::EffectType getInsertEffect(int slotIndex) const;
+    void setSystemFxSends(float chorusSend, float reverbSend);
+    float getChorusSend() const { return chorusSend; }
+    float getReverbSend() const { return reverbSend; }
     void setPerformanceModeEnabled(bool shouldBeEnabled);
     bool isPerformanceModeEnabled() const { return performanceModeEnabled; }
     void setPerformancePart(int performancePartIndex, chimera::engine::PartZone zone);
@@ -143,6 +148,7 @@ private:
     void advanceArpeggiator();
     void refreshArpeggiatorHeldNotes();
     void stopActiveArpeggiatorNotes();
+    void applyFxConfiguration(bool resetFx);
     StereoSample renderVoiceSample();
 
     juce::AudioProcessorValueTreeState parameters;
@@ -155,6 +161,7 @@ private:
     chimera::engine::Arpeggiator arpeggiator;
     chimera::engine::Performance activePerformance;
     std::array<chimera::fx::WorkstationFx, 2> workstationFx;
+    std::array<chimera::fx::EffectType, chimera::fx::InsertRack::slotCount> insertEffects {};
     std::vector<HeldArpeggiatorNote> heldArpeggiatorNotes;
     std::vector<ActiveArpeggiatorNote> activeArpeggiatorNotes;
     int arpeggiatorPartIndex = 0;
@@ -162,6 +169,8 @@ private:
     uint64_t voiceAgeCounter = 0;
     int arpeggiatorSamplesUntilStep = 0;
     int arpeggiatorSamplesUntilGate = 0;
+    float chorusSend = 0.18f;
+    float reverbSend = 0.16f;
     bool arpeggiatorWasEnabled = false;
     bool performanceModeEnabled = false;
 };

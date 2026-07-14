@@ -65,6 +65,8 @@ ChimeraEngineAudioProcessor::ChimeraEngineAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("Output", juce::AudioChannelSet::stereo(), true)),
       parameters(*this, nullptr, "PARAMETERS", createParameterLayout())
 {
+    insertEffects.fill(chimera::fx::EffectType::None);
+    insertEffects[0] = chimera::fx::EffectType::Compressor;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout ChimeraEngineAudioProcessor::createParameterLayout()
@@ -126,13 +128,8 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
     for (auto& fx : workstationFx)
     {
         fx.prepare(currentSampleRate);
-        fx.reset();
-        fx.inserts().setSlot(0, chimera::fx::EffectType::Compressor);
-        fx.system().setChorusSend(0.18f);
-        fx.system().setReverbSend(0.16f);
-        fx.master().setMasterEqDb(0.0f, 0.0f, 0.0f);
-        fx.master().setCompressor(-12.0f, 2.5f, 8.0f, 120.0f, 0.0f);
     }
+    applyFxConfiguration(true);
 
     ignoreUnused(loadDefaultPatch());
 }
@@ -251,6 +248,12 @@ void ChimeraEngineAudioProcessor::getStateInformation(juce::MemoryBlock& destDat
         state.setProperty(prefix + "Pan", zone.pan, nullptr);
         state.setProperty(prefix + "VoiceName", juce::String(zone.voiceName), nullptr);
     }
+    for (int slot = 0; slot < chimera::fx::InsertRack::slotCount; ++slot)
+        state.setProperty("chimeraFxInsert" + juce::String(slot),
+                          static_cast<int>(insertEffects[static_cast<size_t>(slot)]),
+                          nullptr);
+    state.setProperty("chimeraFxChorusSend", chorusSend, nullptr);
+    state.setProperty("chimeraFxReverbSend", reverbSend, nullptr);
 
     juce::MemoryOutputStream stream(destData, true);
     state.writeToStream(stream);
@@ -301,6 +304,14 @@ void ChimeraEngineAudioProcessor::setStateInformation(const void* data, int size
             zone.voiceName = tree.getProperty(prefix + "VoiceName", {}).toString().toStdString();
             activePerformance.setPart(performancePart, std::move(zone));
         }
+
+        for (int slot = 0; slot < chimera::fx::InsertRack::slotCount; ++slot)
+        {
+            const auto rawType = static_cast<int>(tree.getProperty("chimeraFxInsert" + juce::String(slot), static_cast<int>(slot == 0 ? chimera::fx::EffectType::Compressor : chimera::fx::EffectType::None)));
+            setInsertEffect(slot, static_cast<chimera::fx::EffectType>(std::clamp(rawType, 0, chimera::fx::effectTypeCount - 1)));
+        }
+        setSystemFxSends(static_cast<float>(tree.getProperty("chimeraFxChorusSend", 0.18)),
+                         static_cast<float>(tree.getProperty("chimeraFxReverbSend", 0.16)));
     }
 }
 
@@ -384,6 +395,31 @@ bool ChimeraEngineAudioProcessor::isPartEnabled(int partIndex) const
         return false;
 
     return parts[static_cast<size_t>(partIndex)].enabled;
+}
+
+void ChimeraEngineAudioProcessor::setInsertEffect(int slotIndex, chimera::fx::EffectType type)
+{
+    if (slotIndex < 0 || slotIndex >= chimera::fx::InsertRack::slotCount)
+        return;
+
+    const auto rawType = std::clamp(static_cast<int>(type), 0, chimera::fx::effectTypeCount - 1);
+    insertEffects[static_cast<size_t>(slotIndex)] = static_cast<chimera::fx::EffectType>(rawType);
+    applyFxConfiguration(true);
+}
+
+chimera::fx::EffectType ChimeraEngineAudioProcessor::getInsertEffect(int slotIndex) const
+{
+    if (slotIndex < 0 || slotIndex >= chimera::fx::InsertRack::slotCount)
+        return chimera::fx::EffectType::None;
+
+    return insertEffects[static_cast<size_t>(slotIndex)];
+}
+
+void ChimeraEngineAudioProcessor::setSystemFxSends(float newChorusSend, float newReverbSend)
+{
+    chorusSend = std::clamp(newChorusSend, 0.0f, 1.0f);
+    reverbSend = std::clamp(newReverbSend, 0.0f, 1.0f);
+    applyFxConfiguration(false);
 }
 
 void ChimeraEngineAudioProcessor::setPerformanceModeEnabled(bool shouldBeEnabled)
@@ -725,6 +761,23 @@ void ChimeraEngineAudioProcessor::stopActiveArpeggiatorNotes()
                     envelope.noteOff();
 
     activeArpeggiatorNotes.clear();
+}
+
+void ChimeraEngineAudioProcessor::applyFxConfiguration(bool resetFx)
+{
+    for (auto& fx : workstationFx)
+    {
+        for (int slot = 0; slot < chimera::fx::InsertRack::slotCount; ++slot)
+            fx.inserts().setSlot(slot, insertEffects[static_cast<size_t>(slot)]);
+
+        fx.system().setChorusSend(chorusSend);
+        fx.system().setReverbSend(reverbSend);
+        fx.master().setMasterEqDb(0.0f, 0.0f, 0.0f);
+        fx.master().setCompressor(-12.0f, 2.5f, 8.0f, 120.0f, 0.0f);
+
+        if (resetFx)
+            fx.reset();
+    }
 }
 
 ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoiceSample()
