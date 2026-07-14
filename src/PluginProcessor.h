@@ -333,6 +333,7 @@ private:
     juce::CriticalSection pendingMidiLock;
     juce::MidiBuffer pendingPreviewMidi;
     juce::CriticalSection zoneLock;
+    juce::CriticalSection fxLock;
     std::array<PartState, maxParts> parts;
     std::array<int, maxParts> lastMonoNotes {};
     std::array<float, maxParts> pitchBendSemitones {};

@@ -589,8 +589,11 @@ void ChimeraEngineAudioProcessor::setInsertEffect(int slotIndex, chimera::fx::Ef
     if (slotIndex < 0 || slotIndex >= chimera::fx::InsertRack::slotCount)
         return;
 
-    const auto rawType = std::clamp(static_cast<int>(type), 0, chimera::fx::effectTypeCount - 1);
-    insertEffects[static_cast<size_t>(slotIndex)] = static_cast<chimera::fx::EffectType>(rawType);
+    {
+        const juce::ScopedLock lock(fxLock);
+        const auto rawType = std::clamp(static_cast<int>(type), 0, chimera::fx::effectTypeCount - 1);
+        insertEffects[static_cast<size_t>(slotIndex)] = static_cast<chimera::fx::EffectType>(rawType);
+    }
     applyFxConfiguration(true);
 }
 
@@ -604,8 +607,11 @@ chimera::fx::EffectType ChimeraEngineAudioProcessor::getInsertEffect(int slotInd
 
 void ChimeraEngineAudioProcessor::setSystemFxSends(float newChorusSend, float newReverbSend)
 {
-    chorusSend = std::clamp(newChorusSend, 0.0f, 1.0f);
-    reverbSend = std::clamp(newReverbSend, 0.0f, 1.0f);
+    {
+        const juce::ScopedLock lock(fxLock);
+        chorusSend = std::clamp(newChorusSend, 0.0f, 1.0f);
+        reverbSend = std::clamp(newReverbSend, 0.0f, 1.0f);
+    }
     applyFxConfiguration(false);
 }
 
@@ -1297,9 +1303,12 @@ bool ChimeraEngineAudioProcessor::loadFxPreset(int index)
     if (!preset.valid)
         return false;
 
-    insertEffects = preset.inserts;
-    chorusSend = preset.chorus;
-    reverbSend = preset.reverb;
+    {
+        const juce::ScopedLock lock(fxLock);
+        insertEffects = preset.inserts;
+        chorusSend = preset.chorus;
+        reverbSend = preset.reverb;
+    }
     setFloatParameterValue("masterEqLow", preset.eqLow);
     setFloatParameterValue("masterEqMid", preset.eqMid);
     setFloatParameterValue("masterEqHigh", preset.eqHigh);
@@ -2048,6 +2057,15 @@ void ChimeraEngineAudioProcessor::stopAllActiveArpeggiatorNotes()
 
 void ChimeraEngineAudioProcessor::applyFxConfiguration(bool resetFx)
 {
+    const auto low = parameters.getRawParameterValue("masterEqLow")->load();
+    const auto mid = parameters.getRawParameterValue("masterEqMid")->load();
+    const auto high = parameters.getRawParameterValue("masterEqHigh")->load();
+    const auto threshold = parameters.getRawParameterValue("masterCompThreshold")->load();
+    const auto ratio = parameters.getRawParameterValue("masterCompRatio")->load();
+    const auto makeup = parameters.getRawParameterValue("masterCompMakeup")->load();
+
+    const juce::ScopedLock lock(fxLock);
+
     for (auto& fx : workstationFx)
     {
         for (int slot = 0; slot < chimera::fx::InsertRack::slotCount; ++slot)
@@ -2055,7 +2073,8 @@ void ChimeraEngineAudioProcessor::applyFxConfiguration(bool resetFx)
 
         fx.system().setChorusSend(chorusSend);
         fx.system().setReverbSend(reverbSend);
-        applyMasterFxConfiguration();
+        fx.master().setMasterEqDb(low, mid, high);
+        fx.master().setCompressor(threshold, ratio, 8.0f, 120.0f, makeup);
 
         if (resetFx)
             fx.reset();
@@ -2064,6 +2083,8 @@ void ChimeraEngineAudioProcessor::applyFxConfiguration(bool resetFx)
 
 void ChimeraEngineAudioProcessor::applyMasterFxConfiguration()
 {
+    const juce::ScopedLock lock(fxLock);
+
     const auto low = parameters.getRawParameterValue("masterEqLow")->load();
     const auto mid = parameters.getRawParameterValue("masterEqMid")->load();
     const auto high = parameters.getRawParameterValue("masterEqHigh")->load();
@@ -2270,8 +2291,13 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
     {
         const auto dryLeft = output.left;
         const auto dryRight = output.right;
-        const auto wetLeft = workstationFx[0].process(dryLeft);
-        const auto wetRight = workstationFx[1].process(dryRight);
+        auto wetLeft = dryLeft;
+        auto wetRight = dryRight;
+        {
+            const juce::ScopedLock lock(fxLock);
+            wetLeft = workstationFx[0].process(dryLeft);
+            wetRight = workstationFx[1].process(dryRight);
+        }
         output.left = dryLeft * (1.0f - fxMix) + wetLeft * fxMix;
         output.right = dryRight * (1.0f - fxMix) + wetRight * fxMix;
     }

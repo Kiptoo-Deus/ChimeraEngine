@@ -4,6 +4,8 @@
 #include <cassert>
 #include <cmath>
 #include <iostream>
+#include <atomic>
+#include <thread>
 
 namespace
 {
@@ -106,6 +108,31 @@ static void runBasicFxTests()
     assert(masterFxSum > 0.01f);
     assert(std::isfinite(masterFxSum));
     assert(std::abs(masterFxReference - masterFxSum) > 0.001f);
+
+    ChimeraEngineAudioProcessor threadedFxProcessor;
+    threadedFxProcessor.prepareToPlay(48000.0, 512);
+    threadedFxProcessor.getParameters().getParameter("fxMix")->setValueNotifyingHost(1.0f);
+    std::atomic<bool> keepRendering { true };
+    std::thread renderThread([&]
+    {
+        for (int block = 0; block < 128 && keepRendering.load(); ++block)
+        {
+            juce::MidiBuffer renderMidi;
+            if (block == 0)
+                renderMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+            juce::ignoreUnused(renderAndSum(threadedFxProcessor, renderMidi, 128));
+        }
+    });
+
+    for (int edit = 0; edit < 96; ++edit)
+    {
+        threadedFxProcessor.setInsertEffect(edit % chimera::fx::InsertRack::slotCount,
+                                            static_cast<chimera::fx::EffectType>(edit % chimera::fx::effectTypeCount));
+        threadedFxProcessor.setSystemFxSends(static_cast<float>((edit % 10) + 1) / 10.0f,
+                                             static_cast<float>((9 - (edit % 10)) + 1) / 10.0f);
+    }
+    keepRendering = false;
+    renderThread.join();
 }
 
 static void runSequencerExportTests(const juce::File& exportDir)
