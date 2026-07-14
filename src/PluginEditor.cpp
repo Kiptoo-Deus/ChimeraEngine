@@ -19,6 +19,17 @@ juce::File exportDirectory()
     return directory;
 }
 
+juce::File sampleSourceDirectory()
+{
+   #ifdef CHIMERA_PROJECT_ROOT
+    auto directory = juce::File(CHIMERA_PROJECT_ROOT).getChildFile("sample_sources/extracted");
+    if (directory.isDirectory())
+        return directory;
+   #endif
+
+    return exportDirectory();
+}
+
 juce::String pageName(ChimeraEngineAudioProcessorEditor::WorkstationPage page)
 {
     using Page = ChimeraEngineAudioProcessorEditor::WorkstationPage;
@@ -1136,7 +1147,8 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
         }
         else if (activePage == WorkstationPage::Sample)
         {
-            const auto result = owner.startSampleImportJob(exportDirectory());
+            const auto source = sampleSourceDirectory();
+            const auto result = owner.startSampleImportJob(source);
             lcdLine.setText(result.wasOk() ? owner.getSampleImportReport() : result.getErrorMessage(), juce::dontSendNotification);
         }
         else if (activePage == WorkstationPage::Voice)
