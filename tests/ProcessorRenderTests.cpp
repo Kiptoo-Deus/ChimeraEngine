@@ -44,6 +44,15 @@ int main()
     assert(sum > 0.01f);
     assert(std::isfinite(sum));
 
+    ChimeraEngineAudioProcessor wetFxProcessor;
+    wetFxProcessor.prepareToPlay(48000.0, 512);
+    wetFxProcessor.getParameters().getParameter("fxMix")->setValueNotifyingHost(1.0f);
+    juce::MidiBuffer wetFxMidi;
+    wetFxMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    const auto wetFxSum = renderAndSum(wetFxProcessor, wetFxMidi, 512);
+    assert(wetFxSum > 0.01f);
+    assert(std::isfinite(wetFxSum));
+
     juce::MidiBuffer chord;
     chord.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
     chord.addEvent(juce::MidiMessage::noteOn(1, 64, juce::uint8(100)), 0);

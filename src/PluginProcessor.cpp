@@ -117,11 +117,24 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
         voice.partIndex = 0;
     }
 
+    for (auto& fx : workstationFx)
+    {
+        fx.prepare(currentSampleRate);
+        fx.reset();
+        fx.inserts().setSlot(0, chimera::fx::EffectType::Compressor);
+        fx.system().setChorusSend(0.18f);
+        fx.system().setReverbSend(0.16f);
+        fx.master().setMasterEqDb(0.0f, 0.0f, 0.0f);
+        fx.master().setCompressor(-12.0f, 2.5f, 8.0f, 120.0f, 0.0f);
+    }
+
     ignoreUnused(loadDefaultPatch());
 }
 
 void ChimeraEngineAudioProcessor::releaseResources()
 {
+    for (auto& fx : workstationFx)
+        fx.reset();
 }
 
 bool ChimeraEngineAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -669,6 +682,17 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
             voice.note = -1;
             voice.elementCount = 0;
         }
+    }
+
+    const auto fxMix = std::clamp(parameters.getRawParameterValue("fxMix")->load(), 0.0f, 1.0f);
+    if (fxMix > 0.0f)
+    {
+        const auto dryLeft = output.left;
+        const auto dryRight = output.right;
+        const auto wetLeft = workstationFx[0].process(dryLeft);
+        const auto wetRight = workstationFx[1].process(dryRight);
+        output.left = dryLeft * (1.0f - fxMix) + wetLeft * fxMix;
+        output.right = dryRight * (1.0f - fxMix) + wetRight * fxMix;
     }
 
     output.left = std::clamp(output.left, -1.0f, 1.0f);

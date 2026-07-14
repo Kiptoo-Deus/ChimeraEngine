@@ -7,6 +7,7 @@
 #include "dsp/SampleZone.h"
 #include "engine/Arpeggiator.h"
 #include "engine/Performance.h"
+#include "fx/FxChain.h"
 #include <array>
 #include <memory>
 #include <vector>
@@ -136,6 +137,7 @@ private:
     std::array<ActiveVoice, maxVoices> voices;
     chimera::engine::Arpeggiator arpeggiator;
     chimera::engine::Performance activePerformance;
+    std::array<chimera::fx::WorkstationFx, 2> workstationFx;
     std::vector<HeldArpeggiatorNote> heldArpeggiatorNotes;
     std::vector<ActiveArpeggiatorNote> activeArpeggiatorNotes;
     int arpeggiatorPartIndex = 0;
