@@ -6,6 +6,7 @@
 #include "dsp/SamplePlayer.h"
 #include "dsp/SampleZone.h"
 #include "engine/Arpeggiator.h"
+#include "engine/ArpLibrary.h"
 #include "engine/DrumKit.h"
 #include "engine/Performance.h"
 #include "engine/SampleLibrary.h"
@@ -221,6 +222,36 @@ void testArpeggiator()
     assert(arp.tick()[0] == 64);
     assert(arp.tick()[0] == 67);
     assert(arp.tick()[0] == 64);
+}
+
+void testArpLibrary()
+{
+    static_assert(chimera::engine::ArpLibrary::presetSlots == 7881);
+    static_assert(chimera::engine::ArpLibrary::userSlots == 256);
+    static_assert(chimera::engine::ArpLibrary::simultaneousPerformanceArps == 4);
+
+    chimera::engine::ArpLibrary library;
+    chimera::engine::ArpPattern pattern { 1, "Up Basic", "Synth", 480, { { 0, 0, 100, 120 }, { 240, 7, 96, 120 } } };
+    assert(library.setPreset(pattern));
+    assert(library.setUser(0, { 9001, "User Gate", "Synth", 480, { { 0, 0, 110, 240 } } }));
+    assert(!library.setPreset({ 8000, "Too High", "Synth", 480, { { 0, 0, 100, 120 } } }));
+    assert(!library.setUser(256, pattern));
+    assert(!library.setUser(1, { 2, "Bad Step", "Synth", 480, { { 480, 0, 100, 120 } } }));
+    assert(library.presetCount() == 1);
+    assert(library.userCount() == 1);
+
+    const auto preset = library.getPreset(1);
+    assert(preset.has_value());
+    assert(preset->steps.size() == 2);
+    assert(library.getUser(0).has_value());
+    assert(!library.getUser(255).has_value());
+
+    const auto synthPatterns = library.findByCategory("Synth");
+    assert(synthPatterns.size() == 2);
+
+    assert(library.setPreset({ 1, "Up Basic Updated", "Synth", 480, { { 0, 0, 100, 120 } } }));
+    assert(library.presetCount() == 1);
+    assert(library.getPreset(1)->name == "Up Basic Updated");
 }
 
 void testDrumKit()
@@ -501,6 +532,7 @@ int main()
     testModulationMatrix();
     testElement();
     testArpeggiator();
+    testArpLibrary();
     testDrumKit();
     testPerformance();
     testSequencer();

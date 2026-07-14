@@ -47,7 +47,7 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     patchDisplay.setFont(juce::FontOptions(24.0f, juce::Font::bold));
     addAndMakeVisible(patchDisplay);
 
-    categoryDisplay.setText("VOICE/DRUM BANKS  |  2176 VOICES  |  129 KITS  |  128 KEYS", juce::dontSendNotification);
+    categoryDisplay.setText("ARP/VOICE/DRUM  |  7881 ARPS  |  256 USER ARPS  |  4 PERF ARPS", juce::dontSendNotification);
     categoryDisplay.setJustificationType(juce::Justification::centredLeft);
     categoryDisplay.setColour(juce::Label::textColourId, juce::Colour(0xffd8f7f1));
     addAndMakeVisible(categoryDisplay);
