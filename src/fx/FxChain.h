@@ -7,6 +7,28 @@
 
 namespace chimera::fx
 {
+enum class EffectType
+{
+    None,
+    Distortion,
+    Compressor,
+    ThreeBandEq,
+    Delay,
+    Chorus,
+    Phaser,
+    Limiter,
+    AmpUsCombo,
+    AmpJazzCombo,
+    AmpUsHighGain,
+    AmpBritishLead,
+    AmpBritishCombo,
+    AmpBritishLegend,
+    MultiEffect,
+    SmallStereo
+};
+
+constexpr int effectTypeCount = 16;
+
 class Processor
 {
 public:
@@ -122,18 +144,71 @@ private:
     float ceiling = 0.98f;
 };
 
-class FxChain
+class FxChain final : public Processor
 {
 public:
-    void prepare(double sampleRate);
-    void reset();
+    void prepare(double sampleRate) override;
+    void reset() override;
     void add(std::unique_ptr<Processor> processor);
-    float process(float input);
+    float process(float input) override;
     int size() const;
 
 private:
     std::vector<std::unique_ptr<Processor>> processors;
     double sampleRate = 44100.0;
+};
+
+class Reverb final : public Processor
+{
+public:
+    void prepare(double sampleRate) override;
+    void reset() override;
+    void setParameters(float roomSize, float damping, float mix);
+    float process(float input) override;
+
+private:
+    std::array<std::vector<float>, 4> buffers;
+    std::array<size_t, 4> indices {};
+    float feedback = 0.65f;
+    float damping = 0.25f;
+    float mix = 0.25f;
+    float damped = 0.0f;
+    double sampleRate = 44100.0;
+};
+
+std::unique_ptr<Processor> makeEffect(EffectType type);
+
+class InsertRack
+{
+public:
+    static constexpr int slotCount = 8;
+
+    void prepare(double sampleRate);
+    void reset();
+    void setSlot(int index, EffectType type);
+    EffectType getSlot(int index) const;
+    float process(float input);
+
+private:
+    std::array<EffectType, slotCount> types {};
+    std::array<std::unique_ptr<Processor>, slotCount> slots {};
+    double sampleRate = 44100.0;
+};
+
+class SystemFx
+{
+public:
+    void prepare(double sampleRate);
+    void reset();
+    void setChorusSend(float send);
+    void setReverbSend(float send);
+    float process(float input);
+
+private:
+    Chorus chorus;
+    Reverb reverb;
+    float chorusSend = 0.25f;
+    float reverbSend = 0.2f;
 };
 
 class MasterBus
@@ -143,9 +218,29 @@ public:
     void reset();
     float process(float input);
     FxChain& inserts() { return chain; }
+    void setMasterEqDb(float lowDb, float midDb, float highDb);
+    void setCompressor(float thresholdDb, float ratio, float attackMs, float releaseMs, float makeupDb);
 
 private:
     FxChain chain;
+    ThreeBandEq eq;
+    Compressor compressor;
     Limiter limiter;
+};
+
+class WorkstationFx
+{
+public:
+    void prepare(double sampleRate);
+    void reset();
+    InsertRack& inserts() { return insertRack; }
+    SystemFx& system() { return systemFx; }
+    MasterBus& master() { return masterBus; }
+    float process(float input);
+
+private:
+    InsertRack insertRack;
+    SystemFx systemFx;
+    MasterBus masterBus;
 };
 }

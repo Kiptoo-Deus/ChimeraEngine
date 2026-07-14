@@ -47,7 +47,7 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     patchDisplay.setFont(juce::FontOptions(24.0f, juce::Font::bold));
     addAndMakeVisible(patchDisplay);
 
-    categoryDisplay.setText("VOICE/PERFORMANCE/SEQ  |  64 SONGS  |  64 PATTERNS  |  480 PPQ", juce::dontSendNotification);
+    categoryDisplay.setText("VOICE/PERFORMANCE/SEQ/FX  |  8 INSERTS  |  SYSTEM FX  |  MASTER BUS", juce::dontSendNotification);
     categoryDisplay.setJustificationType(juce::Justification::centredLeft);
     categoryDisplay.setColour(juce::Label::textColourId, juce::Colour(0xffd8f7f1));
     addAndMakeVisible(categoryDisplay);

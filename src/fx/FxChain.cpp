@@ -12,6 +12,24 @@ float dbToGain(float db)
 {
     return std::pow(10.0f, db / 20.0f);
 }
+
+void configureAmpModel(EffectType type, Distortion& distortion)
+{
+    if (type == EffectType::AmpJazzCombo)
+        distortion.setDrive(1.6f);
+    else if (type == EffectType::AmpUsCombo)
+        distortion.setDrive(2.2f);
+    else if (type == EffectType::AmpBritishCombo)
+        distortion.setDrive(2.8f);
+    else if (type == EffectType::AmpBritishLead)
+        distortion.setDrive(4.0f);
+    else if (type == EffectType::AmpUsHighGain)
+        distortion.setDrive(5.0f);
+    else if (type == EffectType::AmpBritishLegend)
+        distortion.setDrive(6.0f);
+    else
+        distortion.setDrive(2.0f);
+}
 }
 
 void Processor::prepare(double)
@@ -244,18 +262,242 @@ int FxChain::size() const
     return static_cast<int>(processors.size());
 }
 
+void Reverb::prepare(double newSampleRate)
+{
+    sampleRate = std::max(1.0, newSampleRate);
+    const auto base = static_cast<size_t>(sampleRate * 0.029);
+    for (size_t index = 0; index < buffers.size(); ++index)
+        buffers[index].assign(base + index * static_cast<size_t>(sampleRate * 0.011), 0.0f);
+    reset();
+}
+
+void Reverb::reset()
+{
+    for (auto& buffer : buffers)
+        std::fill(buffer.begin(), buffer.end(), 0.0f);
+    indices = {};
+    damped = 0.0f;
+}
+
+void Reverb::setParameters(float roomSize, float newDamping, float newMix)
+{
+    feedback = std::clamp(roomSize, 0.1f, 0.95f);
+    damping = std::clamp(newDamping, 0.0f, 0.95f);
+    mix = std::clamp(newMix, 0.0f, 1.0f);
+}
+
+float Reverb::process(float input)
+{
+    auto wet = 0.0f;
+    for (size_t bufferIndex = 0; bufferIndex < buffers.size(); ++bufferIndex)
+    {
+        auto& buffer = buffers[bufferIndex];
+        if (buffer.empty())
+            continue;
+
+        const auto delayed = buffer[indices[bufferIndex]];
+        damped = delayed * (1.0f - damping) + damped * damping;
+        buffer[indices[bufferIndex]] = input + damped * feedback;
+        indices[bufferIndex] = (indices[bufferIndex] + 1) % buffer.size();
+        wet += delayed;
+    }
+
+    wet /= static_cast<float>(buffers.size());
+    return input * (1.0f - mix) + wet * mix;
+}
+
+std::unique_ptr<Processor> makeEffect(EffectType type)
+{
+    switch (type)
+    {
+        case EffectType::Distortion:
+        {
+            auto processor = std::make_unique<Distortion>();
+            processor->setDrive(3.0f);
+            return processor;
+        }
+        case EffectType::Compressor:
+        {
+            auto processor = std::make_unique<Compressor>();
+            processor->setParameters(-18.0f, 3.5f, 5.0f, 80.0f, 1.0f);
+            return processor;
+        }
+        case EffectType::ThreeBandEq:
+        {
+            auto processor = std::make_unique<ThreeBandEq>();
+            processor->setGainsDb(1.5f, 0.0f, 1.0f);
+            return processor;
+        }
+        case EffectType::Delay:
+        {
+            auto processor = std::make_unique<Delay>();
+            processor->setParameters(240.0f, 0.28f, 0.3f);
+            return processor;
+        }
+        case EffectType::Chorus:
+        {
+            auto processor = std::make_unique<Chorus>();
+            processor->setParameters(0.35f, 9.0f, 0.35f);
+            return processor;
+        }
+        case EffectType::Phaser:
+        {
+            auto processor = std::make_unique<Phaser>();
+            processor->setParameters(0.28f, 0.75f, 0.25f);
+            return processor;
+        }
+        case EffectType::Limiter:
+            return std::make_unique<Limiter>();
+        case EffectType::AmpUsCombo:
+        case EffectType::AmpJazzCombo:
+        case EffectType::AmpUsHighGain:
+        case EffectType::AmpBritishLead:
+        case EffectType::AmpBritishCombo:
+        case EffectType::AmpBritishLegend:
+        {
+            auto processor = std::make_unique<Distortion>();
+            configureAmpModel(type, *processor);
+            return processor;
+        }
+        case EffectType::MultiEffect:
+        {
+            auto processor = std::make_unique<FxChain>();
+            processor->add(makeEffect(EffectType::Compressor));
+            processor->add(makeEffect(EffectType::Chorus));
+            processor->add(makeEffect(EffectType::Delay));
+            return processor;
+        }
+        case EffectType::SmallStereo:
+        {
+            auto processor = std::make_unique<Chorus>();
+            processor->setParameters(0.18f, 4.0f, 0.22f);
+            return processor;
+        }
+        case EffectType::None:
+            break;
+    }
+
+    return nullptr;
+}
+
+void InsertRack::prepare(double newSampleRate)
+{
+    sampleRate = std::max(1.0, newSampleRate);
+    for (auto& slot : slots)
+        if (slot != nullptr)
+            slot->prepare(sampleRate);
+}
+
+void InsertRack::reset()
+{
+    for (auto& slot : slots)
+        if (slot != nullptr)
+            slot->reset();
+}
+
+void InsertRack::setSlot(int index, EffectType type)
+{
+    if (index < 0 || index >= slotCount)
+        return;
+
+    types[static_cast<size_t>(index)] = type;
+    slots[static_cast<size_t>(index)] = makeEffect(type);
+    if (slots[static_cast<size_t>(index)] != nullptr)
+        slots[static_cast<size_t>(index)]->prepare(sampleRate);
+}
+
+EffectType InsertRack::getSlot(int index) const
+{
+    if (index < 0 || index >= slotCount)
+        return EffectType::None;
+
+    return types[static_cast<size_t>(index)];
+}
+
+float InsertRack::process(float input)
+{
+    auto value = input;
+    for (auto& slot : slots)
+        if (slot != nullptr)
+            value = slot->process(value);
+
+    return value;
+}
+
+void SystemFx::prepare(double sampleRate)
+{
+    chorus.prepare(sampleRate);
+    reverb.prepare(sampleRate);
+}
+
+void SystemFx::reset()
+{
+    chorus.reset();
+    reverb.reset();
+}
+
+void SystemFx::setChorusSend(float send)
+{
+    chorusSend = std::clamp(send, 0.0f, 1.0f);
+}
+
+void SystemFx::setReverbSend(float send)
+{
+    reverbSend = std::clamp(send, 0.0f, 1.0f);
+}
+
+float SystemFx::process(float input)
+{
+    const auto chorused = chorus.process(input) * chorusSend;
+    const auto reverbed = reverb.process(input + chorused) * reverbSend;
+    return input + chorused + reverbed;
+}
+
 void MasterBus::prepare(double sampleRate)
 {
     chain.prepare(sampleRate);
+    eq.prepare(sampleRate);
+    compressor.prepare(sampleRate);
 }
 
 void MasterBus::reset()
 {
     chain.reset();
+    eq.reset();
+    compressor.reset();
 }
 
 float MasterBus::process(float input)
 {
-    return limiter.process(chain.process(input));
+    return limiter.process(compressor.process(eq.process(chain.process(input))));
+}
+
+void MasterBus::setMasterEqDb(float lowDb, float midDb, float highDb)
+{
+    eq.setGainsDb(lowDb, midDb, highDb);
+}
+
+void MasterBus::setCompressor(float thresholdDb, float ratio, float attackMs, float releaseMs, float makeupDb)
+{
+    compressor.setParameters(thresholdDb, ratio, attackMs, releaseMs, makeupDb);
+}
+
+void WorkstationFx::prepare(double sampleRate)
+{
+    insertRack.prepare(sampleRate);
+    systemFx.prepare(sampleRate);
+    masterBus.prepare(sampleRate);
+}
+
+void WorkstationFx::reset()
+{
+    insertRack.reset();
+    systemFx.reset();
+    masterBus.reset();
+}
+
+float WorkstationFx::process(float input)
+{
+    return masterBus.process(systemFx.process(insertRack.process(input)));
 }
 }

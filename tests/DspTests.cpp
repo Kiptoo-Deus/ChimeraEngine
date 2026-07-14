@@ -257,6 +257,8 @@ void testSequencer()
 
 void testFxProcessors()
 {
+    static_assert(chimera::fx::effectTypeCount == 16);
+
     chimera::fx::Distortion distortion;
     distortion.setDrive(4.0f);
     assert(distortion.process(0.5f) < 1.0f);
@@ -284,7 +286,58 @@ void testFxProcessors()
 
     chimera::fx::MasterBus bus;
     bus.prepare(1000.0);
+    bus.setMasterEqDb(1.0f, 0.0f, -1.0f);
+    bus.setCompressor(-12.0f, 2.0f, 2.0f, 30.0f, 0.0f);
     assert(bus.process(2.0f) <= 0.98f);
+
+    for (const auto type : {
+             chimera::fx::EffectType::Distortion,
+             chimera::fx::EffectType::Compressor,
+             chimera::fx::EffectType::ThreeBandEq,
+             chimera::fx::EffectType::Delay,
+             chimera::fx::EffectType::Chorus,
+             chimera::fx::EffectType::Phaser,
+             chimera::fx::EffectType::Limiter,
+             chimera::fx::EffectType::AmpUsCombo,
+             chimera::fx::EffectType::AmpJazzCombo,
+             chimera::fx::EffectType::AmpUsHighGain,
+             chimera::fx::EffectType::AmpBritishLead,
+             chimera::fx::EffectType::AmpBritishCombo,
+             chimera::fx::EffectType::AmpBritishLegend,
+             chimera::fx::EffectType::MultiEffect,
+             chimera::fx::EffectType::SmallStereo,
+         })
+    {
+        auto effect = chimera::fx::makeEffect(type);
+        assert(effect != nullptr);
+        effect->prepare(1000.0);
+        auto value = 0.0f;
+        for (int i = 0; i < 16; ++i)
+            value = effect->process(i == 0 ? 0.25f : 0.0f);
+        assert(std::isfinite(value));
+    }
+
+    chimera::fx::InsertRack rack;
+    rack.prepare(1000.0);
+    rack.setSlot(0, chimera::fx::EffectType::AmpBritishLead);
+    rack.setSlot(1, chimera::fx::EffectType::Delay);
+    assert(rack.getSlot(0) == chimera::fx::EffectType::AmpBritishLead);
+    assert(rack.getSlot(99) == chimera::fx::EffectType::None);
+    assert(std::isfinite(rack.process(0.2f)));
+
+    chimera::fx::SystemFx systemFx;
+    systemFx.prepare(1000.0);
+    systemFx.setChorusSend(0.3f);
+    systemFx.setReverbSend(0.2f);
+    assert(std::isfinite(systemFx.process(0.2f)));
+
+    chimera::fx::WorkstationFx workstationFx;
+    workstationFx.prepare(1000.0);
+    workstationFx.inserts().setSlot(0, chimera::fx::EffectType::MultiEffect);
+    workstationFx.system().setChorusSend(0.2f);
+    workstationFx.system().setReverbSend(0.2f);
+    workstationFx.master().setMasterEqDb(0.5f, 0.0f, 0.5f);
+    assert(std::isfinite(workstationFx.process(0.2f)));
 }
 
 void testPresetLoader()
