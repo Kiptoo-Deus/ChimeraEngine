@@ -7,6 +7,7 @@
 #include "dsp/SampleZone.h"
 #include "engine/Arpeggiator.h"
 #include "engine/Performance.h"
+#include "engine/Sequencer.h"
 #include "engine/VoiceAllocator.h"
 #include "fx/FxChain.h"
 #include "preset/Preset.h"
@@ -217,6 +218,43 @@ void testPerformance()
     assert(bank.getPerformance(999).name == "Init Performance");
 }
 
+void testSequencer()
+{
+    static_assert(chimera::engine::Sequencer::songCount == 64);
+    static_assert(chimera::engine::Sequencer::patternCount == 64);
+    static_assert(chimera::engine::Song::trackCount == 16);
+    static_assert(chimera::engine::Song::ppq == 480);
+    static_assert(chimera::engine::Song::maxNotes == 130000);
+    static_assert(chimera::engine::Pattern::sectionCount == 16);
+    static_assert(chimera::engine::Pattern::maxMeasures == 256);
+    static_assert(chimera::engine::Pattern::phraseSlots == 256);
+
+    chimera::engine::Sequencer sequencer;
+    auto& song = sequencer.song(0);
+    song.setTempo(2.0);
+    assert(song.getTempo() == 5.0);
+    song.setTempo(400.0);
+    assert(song.getTempo() == 300.0);
+    song.setTempo(120.0);
+    assert(song.getTempo() == 120.0);
+
+    assert(song.addNote(0, { 0, 480, 60, 100, 1 }));
+    assert(song.addNote(15, { 480, 240, 64, 90, 2 }));
+    assert(!song.addNote(16, { 0, 480, 60, 100, 1 }));
+    assert(!song.addNote(0, { -1, 480, 60, 100, 1 }));
+    assert(!song.addNote(0, { 0, 0, 60, 100, 1 }));
+    assert(song.noteCount() == 2);
+    assert(song.track(0).noteCount() == 1);
+    assert(song.track(99).noteCount() == 0);
+    assert(sequencer.totalNoteCount() == 2);
+
+    auto& pattern = sequencer.pattern(0);
+    pattern.setSectionMeasures(0, 512);
+    assert(pattern.sectionMeasures(0) == 256);
+    pattern.setSectionMeasures(0, 0);
+    assert(pattern.sectionMeasures(0) == 1);
+}
+
 void testFxProcessors()
 {
     chimera::fx::Distortion distortion;
@@ -294,6 +332,7 @@ int main()
     testElement();
     testArpeggiator();
     testPerformance();
+    testSequencer();
     testFxProcessors();
     testPresetLoader();
     std::cout << "DSP tests passed\n";
