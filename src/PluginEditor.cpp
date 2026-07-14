@@ -564,11 +564,11 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
 
     keyboardState.addListener(this);
     keyboard.setAvailableRange(24, 96);
-    keyboard.setKeyWidth(18.0f);
+    keyboard.setKeyWidth(16.0f);
     keyboard.setScrollButtonsVisible(false);
     addAndMakeVisible(keyboard);
 
-    setSize(1120, 850);
+    setSize(1280, 900);
     setActivePage(WorkstationPage::Demo);
     startTimerHz(8);
 }
@@ -626,32 +626,37 @@ void ChimeraEngineAudioProcessorEditor::paint(juce::Graphics& g)
 
 void ChimeraEngineAudioProcessorEditor::resized()
 {
-    auto area = getLocalBounds().reduced(18);
-    headerBounds = area.removeFromTop(54);
+    auto area = getLocalBounds().reduced(22);
+    headerBounds = area.removeFromTop(64);
     area.removeFromTop(12);
 
-    auto upper = area.removeFromTop(180);
-    displayBounds = upper.removeFromLeft(520);
-    upper.removeFromLeft(12);
-    modeBounds = upper.removeFromTop(76);
-    upper.removeFromTop(12);
+    auto upper = area.removeFromTop(154);
+    displayBounds = upper.removeFromLeft(470);
+    upper.removeFromLeft(14);
+    modeBounds = upper.removeFromTop(62);
+    upper.removeFromTop(10);
     presetBounds = upper;
 
     area.removeFromTop(14);
-    auto middle = area.removeFromTop(320);
-    toneBounds = middle.removeFromLeft(330);
-    middle.removeFromLeft(12);
-    envelopeBounds = middle.removeFromLeft(220);
-    middle.removeFromLeft(12);
-    effectsBounds = middle.removeFromLeft(300);
-    middle.removeFromLeft(12);
-    performanceBounds = middle.removeFromLeft(170);
-    middle.removeFromLeft(12);
+    auto middle = area.removeFromTop(366);
+    auto leftColumn = middle.removeFromLeft(318);
+    middle.removeFromLeft(14);
+    auto rightColumn = middle.removeFromRight(304);
+    middle.removeFromRight(14);
     elementMonitorBounds = middle;
 
-    mixerBounds = area.removeFromTop(86);
-    area.removeFromTop(8);
-    keyboard.setBounds(area.removeFromBottom(104).reduced(8, 12));
+    toneBounds = leftColumn.removeFromTop(204);
+    leftColumn.removeFromTop(14);
+    envelopeBounds = leftColumn;
+
+    effectsBounds = rightColumn.removeFromTop(238);
+    rightColumn.removeFromTop(14);
+    performanceBounds = rightColumn;
+
+    area.removeFromTop(14);
+    mixerBounds = area.removeFromTop(104);
+    area.removeFromTop(12);
+    keyboard.setBounds(area.reduced(8, 10));
 
     title.setBounds(headerBounds.reduced(18, 6).removeFromLeft(420));
     subtitle.setBounds(headerBounds.reduced(18, 6).removeFromRight(420));
@@ -671,47 +676,47 @@ void ChimeraEngineAudioProcessorEditor::resized()
 
     auto presetArea = presetBounds.reduced(14, 24);
     auto browserArea = presetArea.removeFromTop(28);
-    presetSearch.setBounds(browserArea.removeFromLeft(120));
+    presetSearch.setBounds(browserArea.removeFromLeft(180));
     browserArea.removeFromLeft(6);
-    presetCategoryBox.setBounds(browserArea.removeFromLeft(88));
+    presetCategoryBox.setBounds(browserArea.removeFromLeft(120));
     browserArea.removeFromLeft(6);
-    presetBrowserBox.setBounds(browserArea.removeFromLeft(150));
+    presetBrowserBox.setBounds(browserArea.removeFromLeft(220));
     browserArea.removeFromLeft(6);
     favouriteToggle.setBounds(browserArea.removeFromLeft(58));
     performanceBrowserBox.setBounds(presetBounds.reduced(14, 24).removeFromTop(28));
     sampleSlotBox.setBounds(presetBounds.reduced(14, 24).removeFromTop(28));
-    presetArea.removeFromTop(8);
-    const auto presetButtonWidth = (presetArea.getWidth() - 20) / 3;
-    const auto presetButtonHeight = 32;
+    presetArea.removeFromTop(10);
+    const auto presetButtonWidth = (presetArea.getWidth() - 50) / 6;
+    const auto presetButtonHeight = 30;
     for (int i = 0; i < presetButtons.size(); ++i)
     {
-        auto row = i / 3;
-        auto column = i % 3;
+        auto row = 0;
+        auto column = i;
         presetButtons[i]->setBounds(presetArea.getX() + column * (presetButtonWidth + 10),
                                     presetArea.getY() + row * (presetButtonHeight + 10),
                                     presetButtonWidth,
                                     presetButtonHeight);
     }
 
-    auto toneArea = toneBounds.reduced(18, 38);
-    fitRow({ sliders[0], sliders[1], sliders[2] }, toneArea.removeFromTop(150), 12);
+    auto toneArea = toneBounds.reduced(22, 40);
+    fitRow({ sliders[0], sliders[1], sliders[2] }, toneArea.removeFromTop(142), 14);
 
-    auto ampArea = envelopeBounds.reduced(18, 38);
-    fitRow({ sliders[3], sliders[4] }, ampArea.removeFromTop(150), 12);
+    auto ampArea = envelopeBounds.reduced(22, 40);
+    fitRow({ sliders[3], sliders[4] }, ampArea.removeFromTop(128), 16);
 
     auto fxArea = effectsBounds.reduced(18, 38);
-    sliders[5]->setBounds(fxArea.removeFromLeft(104).removeFromTop(150));
-    fxArea.removeFromLeft(10);
-    auto insertGrid = fxArea.removeFromTop(84);
+    sliders[5]->setBounds(fxArea.removeFromLeft(92).removeFromTop(132));
+    fxArea.removeFromLeft(12);
+    auto insertGrid = fxArea.removeFromTop(94);
     const auto insertWidth = (insertGrid.getWidth() - 6) / 2;
     for (int i = 0; i < fxInsertBoxes.size(); ++i)
     {
         const auto row = i / 2;
         const auto column = i % 2;
         fxInsertBoxes[i]->setBounds(insertGrid.getX() + column * (insertWidth + 6),
-                                    insertGrid.getY() + row * 20,
+                                    insertGrid.getY() + row * 22,
                                     insertWidth,
-                                    18);
+                                    20);
     }
     fxArea.removeFromTop(4);
     for (int i = 0; i < fxSendSliders.size(); ++i)
@@ -722,15 +727,15 @@ void ChimeraEngineAudioProcessorEditor::resized()
     fxArea.removeFromTop(2);
     for (int i = 0; i < masterFxSliders.size(); ++i)
     {
-        masterFxSliders[i]->setBounds(fxArea.removeFromTop(15));
+        masterFxSliders[i]->setBounds(fxArea.removeFromTop(17));
         fxArea.removeFromTop(2);
     }
 
     auto arpArea = performanceBounds.reduced(18, 38);
-    sliders[6]->setBounds(arpArea.removeFromTop(86).withWidth(116));
-    arpArea.removeFromTop(8);
-    arpToggle.setBounds(arpArea.removeFromTop(30));
-    arpArea.removeFromTop(8);
+    sliders[6]->setBounds(arpArea.removeFromLeft(88).removeFromTop(114));
+    arpArea.removeFromLeft(12);
+    arpToggle.setBounds(arpArea.removeFromTop(28));
+    arpArea.removeFromTop(10);
     fitRow({ &demoSequenceButton, &sequencerPlayButton, &sequencerResetButton, &mpeToggle }, arpArea.removeFromTop(28), 5);
     arpArea.removeFromTop(4);
     sequencerTickLabel.setBounds(arpArea.removeFromTop(22));
@@ -743,9 +748,9 @@ void ChimeraEngineAudioProcessorEditor::resized()
         labels[i]->setVisible(false);
     }
 
-    auto pageArea = elementMonitorBounds.reduced(16, 34);
-    graphicalEditor->setBounds(pageArea.removeFromTop(178).toNearestInt());
-    pageArea.removeFromTop(8);
+    auto pageArea = elementMonitorBounds.reduced(18, 36);
+    graphicalEditor->setBounds(pageArea.removeFromTop(232).toNearestInt());
+    pageArea.removeFromTop(10);
     for (int i = 0; i < pageLabels.size(); ++i)
     {
         if (i >= 4)
@@ -754,8 +759,8 @@ void ChimeraEngineAudioProcessorEditor::resized()
             continue;
         }
         pageLabels[i]->setVisible(true);
-        pageLabels[i]->setBounds(pageArea.removeFromTop(18).toNearestInt());
-        pageArea.removeFromTop(3);
+        pageLabels[i]->setBounds(pageArea.removeFromTop(19).toNearestInt());
+        pageArea.removeFromTop(4);
     }
     pageArea.removeFromTop(2);
     const auto actionWidth = (pageArea.getWidth() - 12) / 4;
@@ -767,13 +772,13 @@ void ChimeraEngineAudioProcessorEditor::resized()
             continue;
         }
         pageActionButtons[i]->setBounds(pageArea.getX() + i * (actionWidth + 4),
-                                        pageArea.getBottom() - 28,
+                                        pageArea.getBottom() - 30,
                                         actionWidth,
-                                        26);
+                                        28);
     }
 
-    auto mixer = mixerBounds.reduced(12, 24);
-    const auto stripGap = 4;
+    auto mixer = mixerBounds.reduced(14, 24);
+    const auto stripGap = 6;
     const auto stripWidth = (mixer.getWidth() - stripGap * (ChimeraEngineAudioProcessor::getPartCount() - 1))
         / ChimeraEngineAudioProcessor::getPartCount();
     for (int part = 0; part < ChimeraEngineAudioProcessor::getPartCount(); ++part)
