@@ -69,6 +69,7 @@ private:
     juce::OwnedArray<juce::Slider> partPanSliders;
     juce::OwnedArray<juce::ComboBox> fxInsertBoxes;
     juce::OwnedArray<juce::Slider> fxSendSliders;
+    juce::OwnedArray<juce::Slider> masterFxSliders;
     juce::OwnedArray<SliderAttachment> sliderAttachments;
     juce::OwnedArray<ButtonAttachment> buttonAttachments;
     juce::ToggleButton arpToggle;

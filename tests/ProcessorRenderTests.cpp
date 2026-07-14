@@ -27,6 +27,20 @@ float renderAndSum(ChimeraEngineAudioProcessor& processor, juce::MidiBuffer& mid
     const auto [left, right] = renderAndChannelSums(processor, midi, samples);
     return left + right;
 }
+
+void setFloatParameter(ChimeraEngineAudioProcessor& processor, const juce::String& parameterId, float value)
+{
+    auto* parameter = dynamic_cast<juce::AudioParameterFloat*>(processor.getParameters().getParameter(parameterId));
+    assert(parameter != nullptr);
+    parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+}
+
+float getFloatParameter(ChimeraEngineAudioProcessor& processor, const juce::String& parameterId)
+{
+    auto* parameter = dynamic_cast<juce::AudioParameterFloat*>(processor.getParameters().getParameter(parameterId));
+    assert(parameter != nullptr);
+    return parameter->get();
+}
 }
 
 int main()
@@ -68,6 +82,29 @@ int main()
     const auto configuredFxSum = renderAndSum(configuredFxProcessor, configuredFxMidi, 512);
     assert(configuredFxSum > 0.01f);
     assert(std::isfinite(configuredFxSum));
+
+    ChimeraEngineAudioProcessor masterFxProcessor;
+    masterFxProcessor.prepareToPlay(48000.0, 512);
+    masterFxProcessor.getParameters().getParameter("fxMix")->setValueNotifyingHost(1.0f);
+    juce::MidiBuffer masterFxReferenceMidi;
+    masterFxReferenceMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    const auto masterFxReference = renderAndSum(masterFxProcessor, masterFxReferenceMidi, 512);
+
+    ChimeraEngineAudioProcessor shapedMasterFxProcessor;
+    shapedMasterFxProcessor.prepareToPlay(48000.0, 512);
+    shapedMasterFxProcessor.getParameters().getParameter("fxMix")->setValueNotifyingHost(1.0f);
+    setFloatParameter(shapedMasterFxProcessor, "masterEqLow", -9.0f);
+    setFloatParameter(shapedMasterFxProcessor, "masterEqMid", 6.0f);
+    setFloatParameter(shapedMasterFxProcessor, "masterEqHigh", 9.0f);
+    setFloatParameter(shapedMasterFxProcessor, "masterCompThreshold", -30.0f);
+    setFloatParameter(shapedMasterFxProcessor, "masterCompRatio", 8.0f);
+    setFloatParameter(shapedMasterFxProcessor, "masterCompMakeup", 6.0f);
+    juce::MidiBuffer masterFxMidi;
+    masterFxMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    const auto masterFxSum = renderAndSum(shapedMasterFxProcessor, masterFxMidi, 512);
+    assert(masterFxSum > 0.01f);
+    assert(std::isfinite(masterFxSum));
+    assert(std::abs(masterFxReference - masterFxSum) > 0.001f);
 
     ChimeraEngineAudioProcessor sequencerProcessor;
     sequencerProcessor.prepareToPlay(48000.0, 512);
@@ -313,6 +350,12 @@ int main()
     stateSourceProcessor.setInsertEffect(0, chimera::fx::EffectType::SmallStereo);
     stateSourceProcessor.setInsertEffect(1, chimera::fx::EffectType::Delay);
     stateSourceProcessor.setSystemFxSends(0.22f, 0.33f);
+    setFloatParameter(stateSourceProcessor, "masterEqLow", -4.0f);
+    setFloatParameter(stateSourceProcessor, "masterEqMid", 2.5f);
+    setFloatParameter(stateSourceProcessor, "masterEqHigh", 5.0f);
+    setFloatParameter(stateSourceProcessor, "masterCompThreshold", -24.0f);
+    setFloatParameter(stateSourceProcessor, "masterCompRatio", 5.0f);
+    setFloatParameter(stateSourceProcessor, "masterCompMakeup", 3.0f);
     stateSourceProcessor.setPerformancePart(0, { 0, 127, 1, 127, 2, true, 1, 1.0f, 0.0f, "Restored Part" });
     stateSourceProcessor.setPerformanceModeEnabled(true);
     juce::MemoryBlock stateData;
@@ -332,6 +375,12 @@ int main()
     assert(restoredStateProcessor.getInsertEffect(1) == chimera::fx::EffectType::Delay);
     assert(std::abs(restoredStateProcessor.getChorusSend() - 0.22f) < 0.001f);
     assert(std::abs(restoredStateProcessor.getReverbSend() - 0.33f) < 0.001f);
+    assert(std::abs(getFloatParameter(restoredStateProcessor, "masterEqLow") + 4.0f) < 0.001f);
+    assert(std::abs(getFloatParameter(restoredStateProcessor, "masterEqMid") - 2.5f) < 0.001f);
+    assert(std::abs(getFloatParameter(restoredStateProcessor, "masterEqHigh") - 5.0f) < 0.001f);
+    assert(std::abs(getFloatParameter(restoredStateProcessor, "masterCompThreshold") + 24.0f) < 0.001f);
+    assert(std::abs(getFloatParameter(restoredStateProcessor, "masterCompRatio") - 5.0f) < 0.001f);
+    assert(std::abs(getFloatParameter(restoredStateProcessor, "masterCompMakeup") - 3.0f) < 0.001f);
     juce::MidiBuffer restoredPartMidi;
     restoredPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
     assert(renderAndSum(restoredStateProcessor, restoredPartMidi, 512) > 0.01f);

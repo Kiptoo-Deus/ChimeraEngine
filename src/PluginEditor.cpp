@@ -139,7 +139,7 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     keyboard.setScrollButtonsVisible(false);
     addAndMakeVisible(keyboard);
 
-    setSize(1120, 760);
+    setSize(1120, 850);
     startTimerHz(8);
 }
 
@@ -186,7 +186,7 @@ void ChimeraEngineAudioProcessorEditor::resized()
     presetBounds = upper;
 
     area.removeFromTop(14);
-    auto middle = area.removeFromTop(230);
+    auto middle = area.removeFromTop(320);
     toneBounds = middle.removeFromLeft(330);
     middle.removeFromLeft(12);
     envelopeBounds = middle.removeFromLeft(220);
@@ -236,22 +236,28 @@ void ChimeraEngineAudioProcessorEditor::resized()
     auto fxArea = effectsBounds.reduced(18, 38);
     sliders[5]->setBounds(fxArea.removeFromLeft(104).removeFromTop(150));
     fxArea.removeFromLeft(10);
-    auto insertGrid = fxArea.removeFromTop(92);
+    auto insertGrid = fxArea.removeFromTop(84);
     const auto insertWidth = (insertGrid.getWidth() - 6) / 2;
     for (int i = 0; i < fxInsertBoxes.size(); ++i)
     {
         const auto row = i / 2;
         const auto column = i % 2;
         fxInsertBoxes[i]->setBounds(insertGrid.getX() + column * (insertWidth + 6),
-                                    insertGrid.getY() + row * 22,
+                                    insertGrid.getY() + row * 20,
                                     insertWidth,
-                                    20);
+                                    18);
     }
-    fxArea.removeFromTop(6);
+    fxArea.removeFromTop(4);
     for (int i = 0; i < fxSendSliders.size(); ++i)
     {
-        fxSendSliders[i]->setBounds(fxArea.removeFromTop(26));
-        fxArea.removeFromTop(6);
+        fxSendSliders[i]->setBounds(fxArea.removeFromTop(22));
+        fxArea.removeFromTop(3);
+    }
+    fxArea.removeFromTop(2);
+    for (int i = 0; i < masterFxSliders.size(); ++i)
+    {
+        masterFxSliders[i]->setBounds(fxArea.removeFromTop(15));
+        fxArea.removeFromTop(2);
     }
 
     auto arpArea = performanceBounds.reduced(18, 38);
@@ -448,6 +454,32 @@ void ChimeraEngineAudioProcessorEditor::addFxControls()
     {
         owner.setSystemFxSends(owner.getChorusSend(), static_cast<float>(fxSendSliders[1]->getValue()));
     };
+
+    struct MasterControl
+    {
+        const char* name;
+        const char* parameterId;
+    };
+
+    for (const auto control : {
+             MasterControl { "M EQ L", "masterEqLow" },
+             MasterControl { "M EQ M", "masterEqMid" },
+             MasterControl { "M EQ H", "masterEqHigh" },
+             MasterControl { "M CMP T", "masterCompThreshold" },
+             MasterControl { "M CMP R", "masterCompRatio" },
+             MasterControl { "M CMP +", "masterCompMakeup" } })
+    {
+        auto* slider = masterFxSliders.add(new juce::Slider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight));
+        slider->setName(control.name);
+        slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 44, 16);
+        slider->setColour(juce::Slider::trackColourId, juce::Colour(0xfff2b84b));
+        slider->setColour(juce::Slider::thumbColourId, accent());
+        slider->setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        sliderAttachments.add(new SliderAttachment(owner.getParameters(), control.parameterId, *slider));
+        auto& label = addPanelLabel(control.name, juce::Justification::centredLeft);
+        label.attachToComponent(slider, true);
+        addAndMakeVisible(slider);
+    }
 }
 
 void ChimeraEngineAudioProcessorEditor::refreshFxControls()

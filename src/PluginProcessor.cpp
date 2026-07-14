@@ -136,6 +136,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout ChimeraEngineAudioProcessor:
                                                                  juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), 0.25f));
     params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "arpGate", 1 }, "Arp Gate",
                                                                  juce::NormalisableRange<float>(0.05f, 1.0f, 0.001f), 0.75f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "masterEqLow", 1 }, "Master EQ Low",
+                                                                 juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "masterEqMid", 1 }, "Master EQ Mid",
+                                                                 juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "masterEqHigh", 1 }, "Master EQ High",
+                                                                 juce::NormalisableRange<float>(-12.0f, 12.0f, 0.1f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "masterCompThreshold", 1 }, "Master Comp Threshold",
+                                                                 juce::NormalisableRange<float>(-36.0f, 0.0f, 0.1f), -12.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "masterCompRatio", 1 }, "Master Comp Ratio",
+                                                                 juce::NormalisableRange<float>(1.0f, 10.0f, 0.01f), 2.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(juce::ParameterID { "masterCompMakeup", 1 }, "Master Comp Makeup",
+                                                                 juce::NormalisableRange<float>(-6.0f, 12.0f, 0.1f), 0.0f));
     params.push_back(std::make_unique<juce::AudioParameterBool>(juce::ParameterID { "arpEnabled", 1 }, "Arp Enabled", false));
     return { params.begin(), params.end() };
 }
@@ -224,6 +236,7 @@ void ChimeraEngineAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 {
     juce::ScopedNoDenormals noDenormals;
     buffer.clear();
+    applyMasterFxConfiguration();
 
     juce::MidiBuffer mergedMidi;
     {
@@ -1174,11 +1187,26 @@ void ChimeraEngineAudioProcessor::applyFxConfiguration(bool resetFx)
 
         fx.system().setChorusSend(chorusSend);
         fx.system().setReverbSend(reverbSend);
-        fx.master().setMasterEqDb(0.0f, 0.0f, 0.0f);
-        fx.master().setCompressor(-12.0f, 2.5f, 8.0f, 120.0f, 0.0f);
+        applyMasterFxConfiguration();
 
         if (resetFx)
             fx.reset();
+    }
+}
+
+void ChimeraEngineAudioProcessor::applyMasterFxConfiguration()
+{
+    const auto low = parameters.getRawParameterValue("masterEqLow")->load();
+    const auto mid = parameters.getRawParameterValue("masterEqMid")->load();
+    const auto high = parameters.getRawParameterValue("masterEqHigh")->load();
+    const auto threshold = parameters.getRawParameterValue("masterCompThreshold")->load();
+    const auto ratio = parameters.getRawParameterValue("masterCompRatio")->load();
+    const auto makeup = parameters.getRawParameterValue("masterCompMakeup")->load();
+
+    for (auto& fx : workstationFx)
+    {
+        fx.master().setMasterEqDb(low, mid, high);
+        fx.master().setCompressor(threshold, ratio, 8.0f, 120.0f, makeup);
     }
 }
 

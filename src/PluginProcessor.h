@@ -212,6 +212,7 @@ private:
     void stopActiveArpeggiatorNotes(int laneIndex);
     void stopAllActiveArpeggiatorNotes();
     void applyFxConfiguration(bool resetFx);
+    void applyMasterFxConfiguration();
     void addSequencerEventsForBlock(juce::MidiBuffer& midi, int numSamples);
     void applySequencerScenesForRange(int startTick, int endTick);
     int sequencerLoopEndTick() const;
