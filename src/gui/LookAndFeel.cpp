@@ -180,6 +180,11 @@ void LookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button
     g.drawText(button.getButtonText().toUpperCase(), bounds, juce::Justification::centredLeft);
 }
 
+juce::Font LookAndFeel::getTextButtonFont(juce::TextButton&, int buttonHeight)
+{
+    return juce::FontOptions(static_cast<float>(std::clamp(buttonHeight - 12, 12, 16)), juce::Font::bold);
+}
+
 void LookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bool isButtonDown, int buttonX, int buttonY,
                                int buttonW, int buttonH, juce::ComboBox& box)
 {
@@ -203,7 +208,7 @@ void LookAndFeel::drawComboBox(juce::Graphics& g, int width, int height, bool is
 void LookAndFeel::positionComboBoxText(juce::ComboBox& box, juce::Label& label)
 {
     label.setBounds(8, 1, box.getWidth() - 24, box.getHeight() - 2);
-    label.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+    label.setFont(juce::FontOptions(13.0f, juce::Font::bold));
 }
 
 void LookAndFeel::fillTextEditorBackground(juce::Graphics& g, int width, int height, juce::TextEditor&)
