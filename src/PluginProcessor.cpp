@@ -121,6 +121,7 @@ ChimeraEngineAudioProcessor::ChimeraEngineAudioProcessor()
     insertEffects[0] = chimera::fx::EffectType::Compressor;
     patternSectionPhrases.fill(0);
     arpLaneAssignments.fill(0);
+    fxPresetBank.resize(32);
     for (int scene = 0; scene < static_cast<int>(sceneSnapshots.size()); ++scene)
         sceneSnapshots[static_cast<size_t>(scene)].name = "Scene " + juce::String(scene + 1);
 }
@@ -722,6 +723,31 @@ void ChimeraEngineAudioProcessor::applyMidi2PerNoteController(int midiChannel, i
         aftertouchValues[0] = std::max(aftertouchValues[0], clampedValue);
 }
 
+bool ChimeraEngineAudioProcessor::ingestMidi2UmpWords(std::uint32_t word0, std::uint32_t word1,
+                                                      std::uint32_t word2, std::uint32_t word3)
+{
+    juce::ignoreUnused(word3);
+    const auto messageType = (word0 >> 28) & 0x0f;
+    if (messageType != 0x4)
+        return false;
+
+    const auto status = static_cast<int>((word1 >> 24) & 0xff);
+    const auto group = static_cast<int>((word0 >> 24) & 0x0f);
+    const auto channel = (status & 0x0f) + 1;
+    const auto opcode = status & 0xf0;
+    if (opcode != 0xa0 && opcode != 0xd0 && opcode != 0x20)
+        return false;
+
+    const auto note = static_cast<int>((word1 >> 16) & 0x7f);
+    const auto controller = opcode == 0xa0 ? static_cast<int>((word1 >> 8) & 0xff) : 128;
+    const auto value = static_cast<float>(static_cast<double>(word2) / static_cast<double>(std::numeric_limits<std::uint32_t>::max()));
+    applyMidi2PerNoteController(channel, note, controller, value);
+    pushUndoAction("MIDI 2.0 UMP group " + juce::String(group + 1)
+                   + " note " + juce::String(note)
+                   + " controller " + juce::String(controller));
+    return true;
+}
+
 void ChimeraEngineAudioProcessor::setLiveRecordingEnabled(bool shouldRecord, bool overdub, bool punch)
 {
     liveRecordingEnabled = shouldRecord;
@@ -739,9 +765,14 @@ void ChimeraEngineAudioProcessor::setCurrentSequencerTrack(int trackIndex)
 
 bool ChimeraEngineAudioProcessor::addPatternPhraseNote(int sectionIndex, int trackIndex, int tick, int durationTicks, int note, int velocity, int channel)
 {
-    return sequencer.pattern(0).addPhraseNote(sectionIndex,
-                                              trackIndex,
-                                              { tick, durationTicks, note, velocity, channel });
+    const auto ok = sequencer.pattern(0).addPhraseNote(sectionIndex,
+                                                       trackIndex,
+                                                       { tick, durationTicks, note, velocity, channel });
+    if (ok)
+        pushUndoAction("Pattern note S" + juce::String(sectionIndex + 1)
+                       + " T" + juce::String(trackIndex + 1)
+                       + " N" + juce::String(note));
+    return ok;
 }
 
 void ChimeraEngineAudioProcessor::assignPatternSection(int sectionIndex, int phraseSlot)
@@ -750,6 +781,8 @@ void ChimeraEngineAudioProcessor::assignPatternSection(int sectionIndex, int phr
         return;
 
     patternSectionPhrases[static_cast<size_t>(sectionIndex)] = std::clamp(phraseSlot, 0, chimera::engine::Pattern::phraseSlots - 1);
+    pushUndoAction("Pattern section " + juce::String::charToString(static_cast<juce::juce_wchar>('A' + sectionIndex))
+                   + " phrase " + juce::String(patternSectionPhrases[static_cast<size_t>(sectionIndex)]));
 }
 
 int ChimeraEngineAudioProcessor::getPatternSectionPhrase(int sectionIndex) const
@@ -780,7 +813,10 @@ bool ChimeraEngineAudioProcessor::saveUserArp(int slotIndex, const juce::String&
     pattern.category = "User";
     pattern.lengthTicks = chimera::engine::Song::ppq;
     pattern.steps = { { 0, 0, 100, 120 }, { 120, 4, 96, 120 }, { 240, 7, 96, 120 }, { 360, 12, 92, 120 } };
-    return arpLibrary.setUser(slotIndex, std::move(pattern));
+    const auto ok = arpLibrary.setUser(slotIndex, std::move(pattern));
+    if (ok)
+        pushUndoAction("Saved user arp " + juce::String(slotIndex + 1));
+    return ok;
 }
 
 bool ChimeraEngineAudioProcessor::assignArpToLane(int laneIndex, int userSlotIndex)
@@ -791,6 +827,8 @@ bool ChimeraEngineAudioProcessor::assignArpToLane(int laneIndex, int userSlotInd
         return false;
 
     arpLaneAssignments[static_cast<size_t>(laneIndex)] = std::clamp(userSlotIndex, 0, chimera::engine::ArpLibrary::userSlots - 1);
+    pushUndoAction("Assigned arp lane " + juce::String(laneIndex + 1)
+                   + " to user " + juce::String(arpLaneAssignments[static_cast<size_t>(laneIndex)] + 1));
     return true;
 }
 
@@ -812,6 +850,7 @@ bool ChimeraEngineAudioProcessor::storePerformance(int index, const juce::String
     for (int part = 0; part < chimera::engine::Performance::partCount; ++part)
         slot.parts[static_cast<size_t>(part)] = activePerformance.getPart(part);
     performanceBank.setPerformance(index, std::move(slot));
+    pushUndoAction("Stored performance " + juce::String(index + 1));
     return true;
 }
 
@@ -824,6 +863,7 @@ bool ChimeraEngineAudioProcessor::recallPerformance(int index)
     for (int part = 0; part < chimera::engine::Performance::partCount; ++part)
         activePerformance.setPart(part, slot.parts[static_cast<size_t>(part)]);
     performanceModeEnabled = true;
+    pushUndoAction("Recalled performance " + juce::String(index + 1));
     return true;
 }
 
@@ -853,6 +893,7 @@ void ChimeraEngineAudioProcessor::captureSceneSnapshot(int sceneIndex, const juc
     snapshot.chorus = chorusSend;
     snapshot.reverb = reverbSend;
     snapshot.valid = true;
+    pushUndoAction("Captured scene " + juce::String(sceneIndex + 1));
 }
 
 juce::String ChimeraEngineAudioProcessor::getSceneName(int sceneIndex) const
@@ -865,7 +906,10 @@ juce::String ChimeraEngineAudioProcessor::getSceneName(int sceneIndex) const
 
 bool ChimeraEngineAudioProcessor::mapDrumKey(int midiNote, const juce::String& name, int waveformId)
 {
-    return drumKit.setKey({ midiNote, waveformId, name.toStdString(), 1.0f, 0.0f, 9, false, 0 });
+    const auto ok = drumKit.setKey({ midiNote, waveformId, name.toStdString(), 1.0f, 0.0f, 9, false, 0 });
+    if (ok)
+        pushUndoAction("Mapped drum key " + juce::String(midiNote));
+    return ok;
 }
 
 int ChimeraEngineAudioProcessor::getMappedDrumKeyCount() const
@@ -891,12 +935,29 @@ juce::Result ChimeraEngineAudioProcessor::indexSampleLibrary(const juce::File& r
                                         127,
                                         1,
                                         127 });
-    return indexedSampleCount > 0 ? juce::Result::ok() : juce::Result::fail("No audio files found in: " + root.getFullPathName());
+    if (indexedSampleCount > 0)
+    {
+        pushUndoAction("Indexed " + juce::String(indexedSampleCount) + " samples");
+        return juce::Result::ok();
+    }
+    return juce::Result::fail("No audio files found in: " + root.getFullPathName());
+}
+
+juce::Result ChimeraEngineAudioProcessor::startSampleImportJob(const juce::File& root)
+{
+    sampleImportRunning = true;
+    const auto result = indexSampleLibrary(root);
+    sampleImportRunning = false;
+    sampleImportReport = result.wasOk()
+        ? "Import complete: " + juce::String(indexedSampleCount) + " audio files indexed from " + root.getFileName()
+        : "Import failed: " + result.getErrorMessage();
+    return result;
 }
 
 void ChimeraEngineAudioProcessor::setPresetFavorite(const juce::String& presetName, bool shouldBeFavorite)
 {
     presetFavorites[presetName] = shouldBeFavorite;
+    pushUndoAction("Preset favorite " + presetName + (shouldBeFavorite ? " on" : " off"));
 }
 
 bool ChimeraEngineAudioProcessor::isPresetFavorite(const juce::String& presetName) const
@@ -1011,6 +1072,187 @@ juce::Result ChimeraEngineAudioProcessor::bounceDemoToWav(const juce::File& file
     sequencerPlaybackEnabled = wasPlaying;
     sequencerTick = previousTick;
     return juce::Result::ok();
+}
+
+juce::Result ChimeraEngineAudioProcessor::writeCurrentPatchEdit(const juce::File& file) const
+{
+    if (file == juce::File())
+        return juce::Result::fail("No patch writeback file selected");
+
+    chimera::preset::Patch patch;
+    const auto source = projectRoot().getChildFile("presets/Synth").getChildFile(currentPatchName + ".chpatch");
+    if (const auto result = chimera::preset::loadPatch(source, patch); result.failed())
+        return result;
+
+    auto parsed = juce::JSON::parse(source);
+    if (!parsed.isObject())
+        return juce::Result::fail("Current patch is not valid JSON: " + source.getFullPathName());
+
+    auto* object = parsed.getDynamicObject();
+    object->setProperty("editedBy", "Chimera Engine");
+    object->setProperty("editTimestamp", juce::Time::getCurrentTime().toISO8601(true));
+    object->setProperty("lastEdit", lastEditDescription);
+    object->setProperty("currentPatchName", currentPatchName);
+    if (auto* metadata = object->getProperty("metadata").getDynamicObject())
+        metadata->setProperty("favorite", isPresetFavorite(currentPatchName));
+
+    file.getParentDirectory().createDirectory();
+    if (!file.replaceWithText(juce::JSON::toString(parsed, true)))
+        return juce::Result::fail("Could not write patch edit file: " + file.getFullPathName());
+
+    return juce::Result::ok();
+}
+
+bool ChimeraEngineAudioProcessor::saveFxPreset(int index, const juce::String& name)
+{
+    if (index < 0 || index >= static_cast<int>(fxPresetBank.size()))
+        return false;
+
+    auto& preset = fxPresetBank[static_cast<size_t>(index)];
+    preset.name = name.isEmpty() ? "FX Preset " + juce::String(index + 1) : name;
+    preset.inserts = insertEffects;
+    preset.chorus = chorusSend;
+    preset.reverb = reverbSend;
+    preset.eqLow = parameters.getRawParameterValue("masterEqLow")->load();
+    preset.eqMid = parameters.getRawParameterValue("masterEqMid")->load();
+    preset.eqHigh = parameters.getRawParameterValue("masterEqHigh")->load();
+    preset.compThreshold = parameters.getRawParameterValue("masterCompThreshold")->load();
+    preset.compRatio = parameters.getRawParameterValue("masterCompRatio")->load();
+    preset.compMakeup = parameters.getRawParameterValue("masterCompMakeup")->load();
+    preset.valid = true;
+    pushUndoAction("Saved FX preset " + juce::String(index + 1));
+    return true;
+}
+
+bool ChimeraEngineAudioProcessor::loadFxPreset(int index)
+{
+    if (index < 0 || index >= static_cast<int>(fxPresetBank.size()))
+        return false;
+
+    const auto& preset = fxPresetBank[static_cast<size_t>(index)];
+    if (!preset.valid)
+        return false;
+
+    insertEffects = preset.inserts;
+    chorusSend = preset.chorus;
+    reverbSend = preset.reverb;
+    setFloatParameterValue("masterEqLow", preset.eqLow);
+    setFloatParameterValue("masterEqMid", preset.eqMid);
+    setFloatParameterValue("masterEqHigh", preset.eqHigh);
+    setFloatParameterValue("masterCompThreshold", preset.compThreshold);
+    setFloatParameterValue("masterCompRatio", preset.compRatio);
+    setFloatParameterValue("masterCompMakeup", preset.compMakeup);
+    applyFxConfiguration(true);
+    pushUndoAction("Loaded FX preset " + juce::String(index + 1));
+    return true;
+}
+
+juce::String ChimeraEngineAudioProcessor::getFxPresetName(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(fxPresetBank.size()))
+        return {};
+
+    const auto& preset = fxPresetBank[static_cast<size_t>(index)];
+    return preset.valid ? preset.name : "Empty FX " + juce::String(index + 1);
+}
+
+juce::String ChimeraEngineAudioProcessor::undoLastEdit()
+{
+    if (undoStack.empty())
+        return {};
+
+    const auto action = undoStack.back();
+    undoStack.pop_back();
+    redoStack.push_back(action);
+    lastEditDescription = "Undo: " + action;
+    return lastEditDescription;
+}
+
+juce::String ChimeraEngineAudioProcessor::redoLastEdit()
+{
+    if (redoStack.empty())
+        return {};
+
+    const auto action = redoStack.back();
+    redoStack.pop_back();
+    undoStack.push_back(action);
+    lastEditDescription = "Redo: " + action;
+    return lastEditDescription;
+}
+
+void ChimeraEngineAudioProcessor::editPianoRollNoteFromCanvas(float xNorm, float yNorm)
+{
+    const auto tick = std::clamp(static_cast<int>(xNorm * static_cast<float>(chimera::engine::Song::ppq * 8)), 0,
+                                 chimera::engine::Song::ppq * 8 - 1);
+    const auto note = std::clamp(84 - static_cast<int>(yNorm * 48.0f), 36, 84);
+    if (sequencer.song(0).recordNote(currentSequencerTrack, tick, 120, note, 104, 1))
+    {
+        sequencerDemoSeeded = true;
+        pushUndoAction("Piano-roll note " + juce::String(note) + " at tick " + juce::String(tick));
+    }
+}
+
+void ChimeraEngineAudioProcessor::editArpStepFromCanvas(int lane, int step, float velocityNorm)
+{
+    const auto clampedLane = std::clamp(lane, 0, chimera::engine::Performance::partCount - 1);
+    const auto slot = std::clamp(clampedLane * 16 + std::clamp(step, 0, 15), 0, chimera::engine::ArpLibrary::userSlots - 1);
+    const auto velocity = std::clamp(static_cast<int>(velocityNorm * 127.0f), 1, 127);
+    if (saveUserArp(slot, "Grid Arp " + juce::String(slot + 1)))
+    {
+        assignArpToLane(clampedLane, slot);
+        pushUndoAction("Arp grid lane " + juce::String(clampedLane + 1) + " step " + juce::String(step + 1)
+                       + " velocity " + juce::String(velocity));
+    }
+}
+
+void ChimeraEngineAudioProcessor::editPatternCellFromCanvas(int sectionIndex)
+{
+    const auto section = std::clamp(sectionIndex, 0, chimera::engine::Pattern::sectionCount - 1);
+    const auto phrase = (getPatternSectionPhrase(section) + 1) % chimera::engine::Pattern::phraseSlots;
+    assignPatternSection(section, phrase == 0 ? 1 : phrase);
+    addPatternPhraseNote(section, section % chimera::engine::Song::trackCount, section * 120, 120, 48 + (section % 24), 96, 1);
+}
+
+void ChimeraEngineAudioProcessor::editDrumPadFromCanvas(int padIndex)
+{
+    const auto pad = std::clamp(padIndex, 0, 31);
+    mapDrumKey(36 + pad, "Pad " + juce::String(pad + 1), 100000 + pad);
+    drumKitModeEnabled = true;
+}
+
+void ChimeraEngineAudioProcessor::editSampleZoneFromCanvas(int zoneIndex)
+{
+    const auto zone = std::clamp(zoneIndex, 0, 127);
+    sampleLibrary.addUserWaveform(0,
+                                  { 110000 + zone,
+                                    std::string("Mapped Zone ") + std::to_string(zone + 1),
+                                    "Mapped",
+                                    1024,
+                                    36 + (zone % 49),
+                                    0,
+                                    127,
+                                    1,
+                                    127 });
+    indexedSampleCount = std::max(indexedSampleCount, zone + 1);
+    pushUndoAction("Mapped sample zone " + juce::String(zone + 1));
+}
+
+void ChimeraEngineAudioProcessor::editModMatrixCellFromCanvas(int sourceIndex, int destinationIndex)
+{
+    const auto source = std::clamp(sourceIndex, 0, 5);
+    const auto destination = std::clamp(destinationIndex, 0, 3);
+    auto& part = parts[0];
+    if (part.loadedElementCount > 0)
+    {
+        auto& element = part.loadedElements[0];
+        const auto slot = std::clamp(element.modSlotCount, 0, 7);
+        element.modSlots[static_cast<size_t>(slot)].source = static_cast<chimera::dsp::ModSource>(std::min(source, 6));
+        element.modSlots[static_cast<size_t>(slot)].destination = static_cast<chimera::dsp::ModDestination>(std::min(destination, 3));
+        element.modSlots[static_cast<size_t>(slot)].depth = 0.25f + 0.1f * static_cast<float>((source + destination) % 4);
+        element.modSlots[static_cast<size_t>(slot)].enabled = true;
+        element.modSlotCount = std::min(slot + 1, 8);
+    }
+    pushUndoAction("Mod matrix S" + juce::String(source + 1) + " D" + juce::String(destination + 1));
 }
 
 juce::Result ChimeraEngineAudioProcessor::loadPatchFileForPart(int partIndex, const juce::File& patchFile)
@@ -1670,6 +1912,24 @@ void ChimeraEngineAudioProcessor::applyMasterFxConfiguration()
         fx.master().setMasterEqDb(low, mid, high);
         fx.master().setCompressor(threshold, ratio, 8.0f, 120.0f, makeup);
     }
+}
+
+void ChimeraEngineAudioProcessor::pushUndoAction(const juce::String& description)
+{
+    if (description.isEmpty())
+        return;
+
+    lastEditDescription = description;
+    undoStack.push_back(description);
+    redoStack.clear();
+    if (undoStack.size() > 128)
+        undoStack.erase(undoStack.begin());
+}
+
+void ChimeraEngineAudioProcessor::setFloatParameterValue(const juce::String& parameterId, float value)
+{
+    if (auto* parameter = dynamic_cast<juce::AudioParameterFloat*>(parameters.getParameter(parameterId)))
+        parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
 }
 
 int ChimeraEngineAudioProcessor::sequencerLoopEndTick() const

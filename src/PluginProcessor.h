@@ -15,6 +15,7 @@
 #include "engine/Sequencer.h"
 #include "fx/FxChain.h"
 #include <array>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <vector>
@@ -77,6 +78,7 @@ public:
     void setMpeExpressionEnabled(bool shouldBeEnabled) { mpeExpressionEnabled = shouldBeEnabled; }
     bool isMpeExpressionEnabled() const { return mpeExpressionEnabled; }
     void applyMidi2PerNoteController(int midiChannel, int midiNote, int controller, float value);
+    bool ingestMidi2UmpWords(std::uint32_t word0, std::uint32_t word1, std::uint32_t word2, std::uint32_t word3);
     void setLiveRecordingEnabled(bool shouldRecord, bool overdub, bool punch);
     bool isLiveRecordingEnabled() const { return liveRecordingEnabled; }
     void setCurrentSequencerTrack(int trackIndex);
@@ -98,6 +100,9 @@ public:
     bool isDrumKitModeEnabled() const { return drumKitModeEnabled; }
     void setDrumKitModeEnabled(bool shouldBeEnabled) { drumKitModeEnabled = shouldBeEnabled; }
     juce::Result indexSampleLibrary(const juce::File& root);
+    juce::Result startSampleImportJob(const juce::File& root);
+    bool isSampleImportRunning() const { return sampleImportRunning; }
+    juce::String getSampleImportReport() const { return sampleImportReport; }
     int getIndexedSampleCount() const { return indexedSampleCount; }
     void setPresetFavorite(const juce::String& presetName, bool shouldBeFavorite);
     bool isPresetFavorite(const juce::String& presetName) const;
@@ -110,6 +115,21 @@ public:
     juce::Result exportCurrentSongToMidi(const juce::File& file) const;
     juce::Result importSongFromMidi(const juce::File& file);
     juce::Result bounceDemoToWav(const juce::File& file, double durationSeconds);
+    juce::Result writeCurrentPatchEdit(const juce::File& file) const;
+    bool saveFxPreset(int index, const juce::String& name);
+    bool loadFxPreset(int index);
+    juce::String getFxPresetName(int index) const;
+    bool canUndo() const { return !undoStack.empty(); }
+    bool canRedo() const { return !redoStack.empty(); }
+    juce::String undoLastEdit();
+    juce::String redoLastEdit();
+    juce::String getLastEditDescription() const { return lastEditDescription; }
+    void editPianoRollNoteFromCanvas(float xNorm, float yNorm);
+    void editArpStepFromCanvas(int lane, int step, float velocityNorm);
+    void editPatternCellFromCanvas(int sectionIndex);
+    void editDrumPadFromCanvas(int padIndex);
+    void editSampleZoneFromCanvas(int zoneIndex);
+    void editModMatrixCellFromCanvas(int sourceIndex, int destinationIndex);
     static constexpr int getPartCount() { return static_cast<int>(maxParts); }
     static constexpr int getMaxVoiceCount() { return static_cast<int>(maxVoices); }
 
@@ -247,6 +267,21 @@ private:
         int velocity = 100;
     };
 
+    struct FxPreset
+    {
+        juce::String name;
+        std::array<chimera::fx::EffectType, chimera::fx::InsertRack::slotCount> inserts {};
+        float chorus = 0.18f;
+        float reverb = 0.16f;
+        float eqLow = 0.0f;
+        float eqMid = 0.0f;
+        float eqHigh = 0.0f;
+        float compThreshold = -12.0f;
+        float compRatio = 2.5f;
+        float compMakeup = 0.0f;
+        bool valid = false;
+    };
+
     static constexpr size_t maxParts = 16;
     static constexpr size_t maxVoices = 128;
     static constexpr size_t maxElements = 8;
@@ -276,6 +311,8 @@ private:
     void applySequencerScenesForRange(int startTick, int endTick);
     int sequencerLoopEndTick() const;
     StereoSample renderVoiceSample();
+    void pushUndoAction(const juce::String& description);
+    void setFloatParameterValue(const juce::String& parameterId, float value);
 
     juce::AudioProcessorValueTreeState parameters;
     juce::CriticalSection pendingMidiLock;
@@ -301,6 +338,7 @@ private:
     std::map<juce::String, bool> presetFavorites;
     std::map<std::pair<int, int>, ActiveRecordingNote> activeRecordingNotes;
     std::map<std::pair<int, int>, float> midi2PerNotePressure;
+    std::vector<FxPreset> fxPresetBank;
     std::array<chimera::fx::WorkstationFx, 2> workstationFx;
     std::array<chimera::fx::EffectType, chimera::fx::InsertRack::slotCount> insertEffects {};
     double currentSampleRate = 44100.0;
@@ -313,6 +351,11 @@ private:
     int indexedSampleCount = 0;
     int currentSequencerTrack = 0;
     int currentPerformanceScene = 0;
+    juce::String sampleImportReport { "No sample import has run" };
+    juce::String lastEditDescription;
+    std::vector<juce::String> undoStack;
+    std::vector<juce::String> redoStack;
+    bool sampleImportRunning = false;
     bool sequencerPlaybackEnabled = false;
     bool sequencerDemoSeeded = false;
     bool mpeExpressionEnabled = false;

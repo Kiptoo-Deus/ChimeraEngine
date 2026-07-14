@@ -142,7 +142,92 @@ public:
         }
     }
 
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        handleCanvasGesture(event.position);
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        if (page == WorkstationPage::Song || page == WorkstationPage::Arp)
+            handleCanvasGesture(event.position);
+    }
+
 private:
+    juce::Rectangle<float> graphArea() const
+    {
+        auto area = getLocalBounds().toFloat().reduced(10.0f);
+        area.removeFromTop(20.0f);
+        area.removeFromTop(6.0f);
+        return area;
+    }
+
+    void handleCanvasGesture(juce::Point<float> position)
+    {
+        const auto area = graphArea();
+        if (!area.contains(position))
+            return;
+
+        const auto xNorm = std::clamp((position.x - area.getX()) / std::max(1.0f, area.getWidth()), 0.0f, 1.0f);
+        const auto yNorm = std::clamp((position.y - area.getY()) / std::max(1.0f, area.getHeight()), 0.0f, 1.0f);
+
+        switch (page)
+        {
+            case WorkstationPage::Song:
+                owner.editPianoRollNoteFromCanvas(xNorm, yNorm);
+                break;
+            case WorkstationPage::Arp:
+            {
+                const auto lane = std::clamp(static_cast<int>(yNorm * 4.0f), 0, 3);
+                const auto step = std::clamp(static_cast<int>(xNorm * 16.0f), 0, 15);
+                owner.editArpStepFromCanvas(lane, step, 1.0f - yNorm);
+                break;
+            }
+            case WorkstationPage::Pattern:
+                owner.editPatternCellFromCanvas(std::clamp(static_cast<int>(xNorm * 8.0f), 0, 7)
+                                                + 8 * std::clamp(static_cast<int>(yNorm * 2.0f), 0, 1));
+                break;
+            case WorkstationPage::Sample:
+                if (xNorm < 0.46f)
+                {
+                    const auto drumX = std::clamp(xNorm / 0.46f, 0.0f, 0.999f);
+                    owner.editDrumPadFromCanvas(std::clamp(static_cast<int>(drumX * 8.0f), 0, 7)
+                                                + 8 * std::clamp(static_cast<int>(yNorm * 4.0f), 0, 3));
+                }
+                else
+                {
+                    const auto sampleX = std::clamp((xNorm - 0.46f) / 0.54f, 0.0f, 0.999f);
+                    owner.editSampleZoneFromCanvas(std::clamp(static_cast<int>(sampleX * 12.0f), 0, 11));
+                }
+                break;
+            case WorkstationPage::Voice:
+            {
+                const auto source = std::clamp(static_cast<int>(yNorm * 7.0f) - 1, 0, 5);
+                const auto destination = std::clamp(static_cast<int>(xNorm * 5.0f) - 1, 0, 3);
+                owner.editModMatrixCellFromCanvas(source, destination);
+                break;
+            }
+            case WorkstationPage::Performance:
+                owner.applyPerformanceScene(std::clamp(static_cast<int>(xNorm * 4.0f), 0, 3)
+                                            + 4 * std::clamp(static_cast<int>(yNorm * 2.0f), 0, 1));
+                break;
+            case WorkstationPage::Mix:
+            {
+                const auto rackX = std::clamp((position.x - (area.getX() + 84.0f)) / std::max(1.0f, area.getWidth() - 84.0f), 0.0f, 0.999f);
+                const auto slot = std::clamp(static_cast<int>(rackX * 4.0f), 0, 3)
+                                  + 4 * std::clamp(static_cast<int>(yNorm * 2.0f), 0, 1);
+                owner.setInsertEffect(slot, static_cast<chimera::fx::EffectType>((slot + 1) % chimera::fx::effectTypeCount));
+                break;
+            }
+            case WorkstationPage::Utility:
+            case WorkstationPage::Demo:
+                owner.captureSceneSnapshot(owner.getCurrentPerformanceScene(), "Canvas Scene");
+                break;
+        }
+
+        repaint();
+    }
+
     void drawHeader(juce::Graphics& g, juce::Rectangle<float> area)
     {
         g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
@@ -826,8 +911,8 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
         }
         else if (activePage == WorkstationPage::Sample)
         {
-            const auto result = owner.indexSampleLibrary(exportDirectory());
-            lcdLine.setText(result.wasOk() ? "Sample index refreshed" : result.getErrorMessage(), juce::dontSendNotification);
+            const auto result = owner.startSampleImportJob(exportDirectory());
+            lcdLine.setText(result.wasOk() ? owner.getSampleImportReport() : result.getErrorMessage(), juce::dontSendNotification);
         }
         else if (activePage == WorkstationPage::Voice)
         {
@@ -857,6 +942,11 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
             const auto file = exportDirectory().getChildFile("chimera-demo.wav");
             const auto result = owner.bounceDemoToWav(file, 8.0);
             lcdLine.setText(result.wasOk() ? "WAV bounced: " + file.getFileName() : result.getErrorMessage(), juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Mix)
+        {
+            owner.saveFxPreset(0, "Front Panel FX");
+            lcdLine.setText("FX preset saved: " + owner.getFxPresetName(0), juce::dontSendNotification);
         }
         else if (activePage == WorkstationPage::Performance)
         {
@@ -904,6 +994,24 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
             owner.assignArpToLane(2, 1);
             lcdLine.setText("Phrase arp assigned to lane 3", juce::dontSendNotification);
         }
+        else if (activePage == WorkstationPage::Mix)
+        {
+            const auto loaded = owner.loadFxPreset(0);
+            lcdLine.setText(loaded ? "FX preset loaded: " + owner.getFxPresetName(0) : "FX preset slot 1 is empty",
+                            juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Utility)
+        {
+            const auto text = owner.undoLastEdit();
+            lcdLine.setText(text.isNotEmpty() ? text : "Nothing to undo", juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Voice)
+        {
+            const auto file = exportDirectory().getChildFile(owner.getCurrentPatchName() + "-edited.chpatch");
+            const auto result = owner.writeCurrentPatchEdit(file);
+            lcdLine.setText(result.wasOk() ? "Patch edit written: " + file.getFileName() : result.getErrorMessage(),
+                            juce::dontSendNotification);
+        }
         else
             lcdLine.setText(pageName(activePage) + " editor armed", juce::dontSendNotification);
         refreshPageSurface();
@@ -913,9 +1021,14 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
     {
         if (activePage == WorkstationPage::Utility)
         {
-            const auto file = exportDirectory().getChildFile("chimera-song.mid");
-            const auto result = owner.importSongFromMidi(file);
-            lcdLine.setText(result.wasOk() ? "MIDI imported: " + file.getFileName() : result.getErrorMessage(), juce::dontSendNotification);
+            if (owner.canRedo())
+                lcdLine.setText(owner.redoLastEdit(), juce::dontSendNotification);
+            else
+            {
+                const auto file = exportDirectory().getChildFile("chimera-song.mid");
+                const auto result = owner.importSongFromMidi(file);
+                lcdLine.setText(result.wasOk() ? "MIDI imported: " + file.getFileName() : result.getErrorMessage(), juce::dontSendNotification);
+            }
         }
         else if (activePage == WorkstationPage::Sample)
             lcdLine.setText("Sample manager ready for licensed library import", juce::dontSendNotification);
@@ -1029,8 +1142,8 @@ void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
                                        + " R " + juce::String(owner.getOutputPeakRight(), 3),
                                    juce::dontSendNotification);
             pageActionButtons[0]->setButtonText("Part 1");
-            pageActionButtons[1]->setButtonText("FX Rack");
-            pageActionButtons[2]->setButtonText("Master");
+            pageActionButtons[1]->setButtonText("Save FX");
+            pageActionButtons[2]->setButtonText("Load FX");
             pageActionButtons[3]->setButtonText("Template");
             break;
 
@@ -1091,6 +1204,7 @@ void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
             pageLabels[5]->setText("Indexed samples: " + juce::String(owner.getIndexedSampleCount())
                                        + "  Drum keys: " + juce::String(owner.getMappedDrumKeyCount()),
                                    juce::dontSendNotification);
+            pageLabels[6]->setText(owner.getSampleImportReport(), juce::dontSendNotification);
             pageActionButtons[0]->setButtonText("Import");
             pageActionButtons[1]->setButtonText("Map");
             pageActionButtons[2]->setButtonText("Drums");
@@ -1101,12 +1215,13 @@ void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
             setRows({ "Utility: file, validation, MIDI and audio export",
                       "Export current song to MIDI in Documents",
                       "Bounce the internal demo to WAV",
-                      "Import the exported MIDI back into Song 1",
+                      "Undo/redo edit history for workstation operations",
                       "Plugin state stores pages, parts, FX, scenes" });
+            pageLabels[5]->setText("Last edit: " + owner.getLastEditDescription(), juce::dontSendNotification);
             pageActionButtons[0]->setButtonText("MIDI Out");
             pageActionButtons[1]->setButtonText("WAV Bounce");
-            pageActionButtons[2]->setButtonText("Reset Seq");
-            pageActionButtons[3]->setButtonText("MIDI In");
+            pageActionButtons[2]->setButtonText("Undo");
+            pageActionButtons[3]->setButtonText(owner.canRedo() ? "Redo" : "MIDI In");
             break;
 
         case WorkstationPage::Demo:

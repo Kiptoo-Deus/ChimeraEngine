@@ -1,4 +1,5 @@
 #include "PluginProcessor.h"
+#include "preset/Preset.h"
 
 #include <cassert>
 #include <cmath>
@@ -43,7 +44,7 @@ float getFloatParameter(ChimeraEngineAudioProcessor& processor, const juce::Stri
 }
 }
 
-int main()
+static void runBasicFxTests()
 {
     static_assert(ChimeraEngineAudioProcessor::getPartCount() == 16);
     static_assert(ChimeraEngineAudioProcessor::getMaxVoiceCount() == 128);
@@ -105,7 +106,10 @@ int main()
     assert(masterFxSum > 0.01f);
     assert(std::isfinite(masterFxSum));
     assert(std::abs(masterFxReference - masterFxSum) > 0.001f);
+}
 
+static void runSequencerExportTests(const juce::File& exportDir)
+{
     ChimeraEngineAudioProcessor sequencerProcessor;
     sequencerProcessor.prepareToPlay(48000.0, 512);
     sequencerProcessor.setSequencerPlaybackEnabled(true);
@@ -129,9 +133,6 @@ int main()
         }
     }
     assert(sceneChanged);
-    const auto exportDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
-        .getChildFile("chimera-engine-tests");
-    exportDir.createDirectory();
     const auto midiExport = exportDir.getChildFile("processor-song.mid");
     midiExport.deleteFile();
     assert(sequencerProcessor.exportCurrentSongToMidi(midiExport).wasOk());
@@ -148,7 +149,10 @@ int main()
     sequencerProcessor.resetSequencerPlayback();
     assert(sequencerProcessor.getSequencerTick() == 0);
     assert(sequencerProcessor.getCurrentPerformanceScene() == 0);
+}
 
+static void runRecordingPatternTests()
+{
     ChimeraEngineAudioProcessor recordingProcessor;
     recordingProcessor.prepareToPlay(48000.0, 512);
     recordingProcessor.setLiveRecordingEnabled(true, true, false);
@@ -172,7 +176,10 @@ int main()
     assert(recordingProcessor.saveUserArp(3, "Test User Arp"));
     assert(recordingProcessor.assignArpToLane(2, 3));
     assert(recordingProcessor.getArpLaneAssignment(2) == 3);
+}
 
+static void runChordPreviewPresetTests()
+{
     juce::MidiBuffer chord;
     chord.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
     chord.addEvent(juce::MidiMessage::noteOn(1, 64, juce::uint8(100)), 0);
@@ -212,7 +219,10 @@ int main()
     assert(renderAndSum(presetProcessor, stackMidi, 512) > 0.01f);
     assert(presetProcessor.loadSynthPreset("Velocity Split").wasOk());
     assert(presetProcessor.getCurrentPatchName() == "Velocity Split");
+}
 
+static void runExpressionTests()
+{
     ChimeraEngineAudioProcessor lfoPanProcessor;
     lfoPanProcessor.prepareToPlay(48000.0, 512);
     lfoPanProcessor.getParameters().getParameter("fxMix")->setValueNotifyingHost(0.0f);
@@ -256,7 +266,13 @@ int main()
     const auto mpeSum = renderAndSum(mpeProcessor, mpeMidi, 512);
     assert(mpeSum > 0.01f);
     assert(std::isfinite(mpeSum));
+}
 
+static void runVelocityStereoTests()
+{
+    ChimeraEngineAudioProcessor presetProcessor;
+    presetProcessor.prepareToPlay(48000.0, 512);
+    assert(presetProcessor.loadSynthPreset("Velocity Split").wasOk());
     juce::MidiBuffer lowVelocityMidi;
     lowVelocityMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(40)), 0);
     const auto lowVelocitySum = renderAndSum(presetProcessor, lowVelocityMidi, 512);
@@ -287,7 +303,10 @@ int main()
     const auto [left, right] = renderAndChannelSums(stereoProcessor, stereoMidi, 512);
     assert(left > 0.01f && right > 0.01f);
     assert(std::abs(left - right) > 0.001f);
+}
 
+static void runArpAndPartTests()
+{
     ChimeraEngineAudioProcessor arpProcessor;
     arpProcessor.prepareToPlay(48000.0, 512);
     arpProcessor.getParameters().getParameter("arpEnabled")->setValueNotifyingHost(1.0f);
@@ -353,7 +372,10 @@ int main()
     juce::MidiBuffer disabledPartMidi;
     disabledPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
     assert(renderAndSum(disabledPartProcessor, disabledPartMidi, 512) == 0.0f);
+}
 
+static void runPerformanceSceneTests()
+{
     ChimeraEngineAudioProcessor performanceProcessor;
     performanceProcessor.prepareToPlay(48000.0, 512);
     assert(performanceProcessor.loadSynthPresetForPart(0, "Stack").wasOk());
@@ -397,7 +419,10 @@ int main()
     assert(std::abs(sceneSnapshotProcessor.getPartLevel(0) - 0.42f) < 0.001f);
     assert(sceneSnapshotProcessor.getInsertEffect(2) == chimera::fx::EffectType::Phaser);
     assert(sceneSnapshotProcessor.getArpLaneAssignment(0) == 5);
+}
 
+static void runMetadataAndEditorTests(const juce::File& exportDir)
+{
     ChimeraEngineAudioProcessor drumProcessor;
     drumProcessor.prepareToPlay(48000.0, 512);
     assert(drumProcessor.mapDrumKey(36, "Kick", 1));
@@ -417,11 +442,59 @@ int main()
     assert(metadataProcessor.indexSampleLibrary(exportDir).wasOk());
     assert(metadataProcessor.getIndexedSampleCount() > 0);
     metadataProcessor.applyMidi2PerNoteController(1, 60, 74, 0.75f);
+    assert(metadataProcessor.ingestMidi2UmpWords(0x40000000u, 0xa03c4a00u, 0xffffffffu, 0u));
+    assert(metadataProcessor.canUndo());
+    const auto undoText = metadataProcessor.undoLastEdit();
+    assert(undoText.contains("Undo"));
+    assert(metadataProcessor.canRedo());
+    const auto redoText = metadataProcessor.redoLastEdit();
+    assert(redoText.contains("Redo"));
+    assert(metadataProcessor.startSampleImportJob(exportDir).wasOk());
+    assert(metadataProcessor.getSampleImportReport().contains("Import complete"));
     juce::MidiBuffer meteredMidi;
     meteredMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
     assert(renderAndSum(metadataProcessor, meteredMidi, 512) > 0.01f);
     assert(metadataProcessor.getOutputPeakLeft() > 0.0f || metadataProcessor.getOutputPeakRight() > 0.0f);
 
+    auto workstationEditProcessor = std::make_unique<ChimeraEngineAudioProcessor>();
+    workstationEditProcessor->prepareToPlay(48000.0, 512);
+    const auto noteCountBeforeCanvas = workstationEditProcessor->getCurrentSongNoteCount();
+    workstationEditProcessor->editPianoRollNoteFromCanvas(0.25f, 0.5f);
+    assert(workstationEditProcessor->getCurrentSongNoteCount() == noteCountBeforeCanvas + 1);
+    workstationEditProcessor->editArpStepFromCanvas(1, 7, 0.8f);
+    assert(workstationEditProcessor->getArpLaneAssignment(1) > 0);
+    workstationEditProcessor->editPatternCellFromCanvas(5);
+    assert(workstationEditProcessor->getPatternSectionPhrase(5) > 0);
+    assert(workstationEditProcessor->getPatternSectionNoteCount(5) > 0);
+    workstationEditProcessor->editDrumPadFromCanvas(4);
+    assert(workstationEditProcessor->isDrumKitModeEnabled());
+    assert(workstationEditProcessor->getMappedDrumKeyCount() > 0);
+    workstationEditProcessor->editSampleZoneFromCanvas(3);
+    assert(workstationEditProcessor->getIndexedSampleCount() >= 4);
+    workstationEditProcessor->editModMatrixCellFromCanvas(2, 1);
+    assert(workstationEditProcessor->getModMatrixSummary(0).contains("serialized"));
+    workstationEditProcessor->setInsertEffect(0, chimera::fx::EffectType::Delay);
+    workstationEditProcessor->setSystemFxSends(0.31f, 0.41f);
+    setFloatParameter(*workstationEditProcessor, "masterEqLow", -3.0f);
+    setFloatParameter(*workstationEditProcessor, "masterCompRatio", 4.5f);
+    assert(workstationEditProcessor->saveFxPreset(2, "Edit Test FX"));
+    workstationEditProcessor->setInsertEffect(0, chimera::fx::EffectType::None);
+    workstationEditProcessor->setSystemFxSends(0.0f, 0.0f);
+    assert(workstationEditProcessor->loadFxPreset(2));
+    assert(workstationEditProcessor->getFxPresetName(2) == "Edit Test FX");
+    assert(workstationEditProcessor->getInsertEffect(0) == chimera::fx::EffectType::Delay);
+    assert(std::abs(workstationEditProcessor->getChorusSend() - 0.31f) < 0.001f);
+    assert(std::abs(getFloatParameter(*workstationEditProcessor, "masterEqLow") + 3.0f) < 0.001f);
+    const auto patchWrite = exportDir.getChildFile("edited-test.chpatch");
+    patchWrite.deleteFile();
+    assert(workstationEditProcessor->writeCurrentPatchEdit(patchWrite).wasOk());
+    chimera::preset::Patch writtenPatch;
+    assert(chimera::preset::loadPatch(patchWrite, writtenPatch).wasOk());
+    assert(workstationEditProcessor->canUndo());
+}
+
+static void runStateRestoreTests()
+{
     ChimeraEngineAudioProcessor stateSourceProcessor;
     stateSourceProcessor.prepareToPlay(48000.0, 512);
     stateSourceProcessor.applyPerformanceScene(1);
@@ -478,6 +551,25 @@ int main()
     juce::MidiBuffer restoredPartMidi;
     restoredPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
     assert(renderAndSum(restoredStateProcessor, restoredPartMidi, 512) > 0.01f);
+}
+
+int main()
+{
+    juce::ScopedJuceInitialiser_GUI juceInitialiser;
+    const auto exportDir = juce::File::getSpecialLocation(juce::File::tempDirectory)
+        .getChildFile("chimera-engine-tests");
+    exportDir.createDirectory();
+
+    runBasicFxTests();
+    runSequencerExportTests(exportDir);
+    runRecordingPatternTests();
+    runChordPreviewPresetTests();
+    runExpressionTests();
+    runVelocityStereoTests();
+    runArpAndPartTests();
+    runPerformanceSceneTests();
+    runMetadataAndEditorTests(exportDir);
+    runStateRestoreTests();
 
     std::cout << "Processor render test passed\n";
     return 0;
