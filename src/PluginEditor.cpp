@@ -6,10 +6,10 @@
 
 namespace
 {
-juce::Colour panelFill() { return juce::Colour(0xff171c22); }
-juce::Colour panelLine() { return juce::Colour(0xff38414b); }
-juce::Colour accent() { return juce::Colour(0xff2dd4bf); }
-juce::Colour amber() { return juce::Colour(0xfff2b84b); }
+juce::Colour panelFill() { return juce::Colour(0xff15191f); }
+juce::Colour panelLine() { return juce::Colour(0xff434d58); }
+juce::Colour accent() { return juce::Colour(0xff66d9b7); }
+juce::Colour amber() { return juce::Colour(0xfff0b64b); }
 
 juce::File exportDirectory()
 {
@@ -119,10 +119,17 @@ public:
     void paint(juce::Graphics& g) override
     {
         const auto bounds = getLocalBounds().toFloat();
-        g.setColour(juce::Colour(0xff0a0d12));
-        g.fillRoundedRectangle(bounds, 5.0f);
-        g.setColour(juce::Colour(0xff334155));
-        g.drawRoundedRectangle(bounds.reduced(0.5f), 5.0f, 1.0f);
+        g.setColour(juce::Colour(0xff050608));
+        g.fillRoundedRectangle(bounds, 3.0f);
+        juce::ColourGradient screen(juce::Colour(0xff101821), bounds.getX(), bounds.getY(),
+                                    juce::Colour(0xff070b0f), bounds.getX(), bounds.getBottom(), false);
+        screen.addColour(0.55, juce::Colour(0xff0c1118));
+        g.setGradientFill(screen);
+        g.fillRoundedRectangle(bounds.reduced(2.0f), 3.0f);
+        g.setColour(juce::Colour(0xff3f4b56));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 3.0f, 1.0f);
+        g.setColour(juce::Colour(0xffb7c6d4).withAlpha(0.08f));
+        g.drawLine(bounds.getX() + 3.0f, bounds.getY() + 2.0f, bounds.getRight() - 3.0f, bounds.getY() + 2.0f);
 
         auto area = bounds.reduced(10.0f);
         drawHeader(g, area.removeFromTop(20.0f));
@@ -484,30 +491,32 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
 
     title.setText("Chimera Engine", juce::dontSendNotification);
     title.setJustificationType(juce::Justification::centredLeft);
-    title.setColour(juce::Label::textColourId, juce::Colours::white);
-    title.setFont(juce::FontOptions(28.0f, juce::Font::bold));
+    title.setColour(juce::Label::textColourId, juce::Colour(0xfff2f6fa));
+    title.setFont(juce::FontOptions(26.0f, juce::Font::bold));
     addAndMakeVisible(title);
 
     subtitle.setText("Element Workstation Instrument", juce::dontSendNotification);
     subtitle.setJustificationType(juce::Justification::centredRight);
-    subtitle.setColour(juce::Label::textColourId, juce::Colour(0xff9aa7b3));
+    subtitle.setColour(juce::Label::textColourId, juce::Colour(0xffaab6c2));
     addAndMakeVisible(subtitle);
 
     patchDisplay.setText(owner.getCurrentPatchName(), juce::dontSendNotification);
     patchDisplay.setJustificationType(juce::Justification::centredLeft);
-    patchDisplay.setColour(juce::Label::textColourId, juce::Colour(0xff06110f));
-    patchDisplay.setColour(juce::Label::backgroundColourId, accent());
+    patchDisplay.setColour(juce::Label::textColourId, juce::Colour(0xffbfffe8));
+    patchDisplay.setColour(juce::Label::backgroundColourId, juce::Colour(0xff09110d));
     patchDisplay.setFont(juce::FontOptions(24.0f, juce::Font::bold));
     addAndMakeVisible(patchDisplay);
 
     categoryDisplay.setText("ARP/VOICE/DRUM  |  7881 ARPS  |  256 USER ARPS  |  4 PERF ARPS", juce::dontSendNotification);
     categoryDisplay.setJustificationType(juce::Justification::centredLeft);
-    categoryDisplay.setColour(juce::Label::textColourId, juce::Colour(0xffd8f7f1));
+    categoryDisplay.setColour(juce::Label::textColourId, juce::Colour(0xffa9d7c6));
+    categoryDisplay.setColour(juce::Label::backgroundColourId, juce::Colour(0xff09110d));
     addAndMakeVisible(categoryDisplay);
 
     lcdLine.setText("Ready - use MIDI input, the on-screen keyboard, or preset commands.", juce::dontSendNotification);
     lcdLine.setJustificationType(juce::Justification::centredLeft);
-    lcdLine.setColour(juce::Label::textColourId, juce::Colour(0xffa7f3d0));
+    lcdLine.setColour(juce::Label::textColourId, juce::Colour(0xff82d6af));
+    lcdLine.setColour(juce::Label::backgroundColourId, juce::Colour(0xff09110d));
     addAndMakeVisible(lcdLine);
 
     for (const auto& mode : { "Voice", "Perf", "Mix", "Arp", "Song", "Pattern", "Sample", "Utility", "Demo" })
@@ -573,7 +582,29 @@ ChimeraEngineAudioProcessorEditor::~ChimeraEngineAudioProcessorEditor()
 
 void ChimeraEngineAudioProcessorEditor::paint(juce::Graphics& g)
 {
-    g.fillAll(juce::Colour(0xff0e1116));
+    juce::ColourGradient background(juce::Colour(0xff181d23), 0.0f, 0.0f,
+                                    juce::Colour(0xff07090c), 0.0f, static_cast<float>(getHeight()), false);
+    background.addColour(0.35, juce::Colour(0xff101419));
+    g.setGradientFill(background);
+    g.fillAll();
+
+    auto chassis = getLocalBounds().toFloat().reduced(8.0f);
+    g.setColour(juce::Colour(0xff050608));
+    g.fillRoundedRectangle(chassis, 8.0f);
+    juce::ColourGradient face(juce::Colour(0xff2a3037), chassis.getX(), chassis.getY(),
+                              juce::Colour(0xff11151a), chassis.getX(), chassis.getBottom(), false);
+    face.addColour(0.18, juce::Colour(0xff343b44));
+    face.addColour(0.5, juce::Colour(0xff1b2027));
+    g.setGradientFill(face);
+    g.fillRoundedRectangle(chassis.reduced(3.0f), 6.0f);
+    g.setColour(juce::Colour(0xff57616d));
+    g.drawRoundedRectangle(chassis.reduced(3.0f), 6.0f, 1.0f);
+
+    auto topRail = chassis.reduced(16.0f, 12.0f).removeFromTop(8.0f);
+    g.setColour(juce::Colour(0xff07090c));
+    g.fillRoundedRectangle(topRail, 3.0f);
+    g.setColour(juce::Colour(0xff3c4650));
+    g.drawLine(topRail.getX(), topRail.getBottom() + 4.0f, topRail.getRight(), topRail.getBottom() + 4.0f, 1.0f);
 
     drawPanel(g, PanelId::Header, {});
     drawPanel(g, PanelId::Display, "LCD");
@@ -587,10 +618,10 @@ void ChimeraEngineAudioProcessorEditor::paint(juce::Graphics& g)
     drawPanel(g, PanelId::ElementMonitor, "MIDI Flow");
 
     auto keyboardFrame = keyboard.getBounds().expanded(8, 10);
-    g.setColour(juce::Colour(0xff080a0d));
-    g.fillRoundedRectangle(keyboardFrame.toFloat(), 6.0f);
+    g.setColour(juce::Colour(0xff06080b));
+    g.fillRoundedRectangle(keyboardFrame.toFloat(), 4.0f);
     g.setColour(panelLine());
-    g.drawRoundedRectangle(keyboardFrame.toFloat(), 6.0f, 1.0f);
+    g.drawRoundedRectangle(keyboardFrame.toFloat(), 4.0f, 1.0f);
 }
 
 void ChimeraEngineAudioProcessorEditor::resized()
@@ -751,11 +782,11 @@ void ChimeraEngineAudioProcessorEditor::resized()
         auto* enable = partEnableButtons[part];
         auto* level = partLevelSliders[part];
         auto* pan = partPanSliders[part];
-        enable->setBounds(strip.removeFromTop(20));
+        enable->setBounds(strip.removeFromTop(18));
         strip.removeFromTop(2);
-        level->setBounds(strip.removeFromTop(30));
+        level->setBounds(strip.removeFromTop(40).reduced(2, 0));
         strip.removeFromTop(2);
-        pan->setBounds(strip.removeFromTop(12));
+        pan->setBounds(strip.removeFromTop(14));
         mixer.removeFromLeft(stripGap);
     }
 }
@@ -773,7 +804,8 @@ juce::Slider& ChimeraEngineAudioProcessorEditor::addKnob(juce::Component& parent
     label->setJustificationType(juce::Justification::centred);
     label->setColour(juce::Label::textColourId, juce::Colour(0xffdde5ec));
     label->attachToComponent(slider, false);
-    parent.addAndMakeVisible(label);
+    label->setVisible(false);
+    parent.addChildComponent(label);
     return *slider;
 }
 
@@ -867,8 +899,8 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
     for (int i = 0; i < 8; ++i)
     {
         auto* label = pageLabels.add(new juce::Label());
-        label->setColour(juce::Label::textColourId, juce::Colour(0xffd8e6ef));
-        label->setColour(juce::Label::backgroundColourId, juce::Colour(0xff11161c));
+        label->setColour(juce::Label::textColourId, juce::Colour(0xffcad6e1));
+        label->setColour(juce::Label::backgroundColourId, juce::Colours::transparentBlack);
         label->setJustificationType(juce::Justification::centredLeft);
         addAndMakeVisible(label);
     }
@@ -1269,11 +1301,11 @@ void ChimeraEngineAudioProcessorEditor::addPartMixerControls()
         };
         addAndMakeVisible(enable);
 
-        auto* level = partLevelSliders.add(new juce::Slider(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox));
+        auto* level = partLevelSliders.add(new juce::Slider(juce::Slider::LinearVertical, juce::Slider::NoTextBox));
         level->setRange(0.0, 1.5, 0.01);
         level->setValue(owner.getPartLevel(part), juce::dontSendNotification);
         level->setColour(juce::Slider::trackColourId, accent());
-        level->setColour(juce::Slider::thumbColourId, juce::Colour(0xfff2b84b));
+        level->setColour(juce::Slider::thumbColourId, amber());
         level->onValueChange = [this, part]
         {
             owner.setPartMix(part,
@@ -1286,7 +1318,7 @@ void ChimeraEngineAudioProcessorEditor::addPartMixerControls()
         auto* pan = partPanSliders.add(new juce::Slider(juce::Slider::LinearHorizontal, juce::Slider::NoTextBox));
         pan->setRange(-1.0, 1.0, 0.01);
         pan->setValue(owner.getPartPan(part), juce::dontSendNotification);
-        pan->setColour(juce::Slider::trackColourId, juce::Colour(0xff64748b));
+        pan->setColour(juce::Slider::trackColourId, juce::Colour(0xff8aa0b3));
         pan->setColour(juce::Slider::thumbColourId, accent());
         pan->onValueChange = [this, part]
         {
@@ -1476,17 +1508,48 @@ void ChimeraEngineAudioProcessorEditor::drawPanel(juce::Graphics& g, PanelId pan
     if (bounds.isEmpty())
         return;
 
-    const auto rounded = panel == PanelId::Header ? 4.0f : 6.0f;
-    g.setColour(panel == PanelId::Header ? juce::Colour(0xff141922) : panelFill());
-    g.fillRoundedRectangle(bounds.toFloat(), rounded);
-    g.setColour(panel == PanelId::Header ? accent() : panelLine());
-    g.drawRoundedRectangle(bounds.toFloat(), rounded, panel == PanelId::Header ? 1.6f : 1.0f);
+    const auto b = bounds.toFloat();
+    const auto rounded = panel == PanelId::Header ? 3.0f : 4.0f;
+    const auto isDisplay = panel == PanelId::Display || panel == PanelId::ElementMonitor;
+    const auto isHeader = panel == PanelId::Header;
+
+    g.setColour(juce::Colour(0xff050607).withAlpha(0.72f));
+    g.fillRoundedRectangle(b.translated(0.0f, 2.0f), rounded);
+
+    juce::ColourGradient fill(isHeader ? juce::Colour(0xff20262d) : juce::Colour(0xff232932),
+                              b.getX(), b.getY(),
+                              isDisplay ? juce::Colour(0xff070a0d) : juce::Colour(0xff11161c),
+                              b.getX(), b.getBottom(), false);
+    fill.addColour(0.16, isHeader ? juce::Colour(0xff303842) : juce::Colour(0xff2b323b));
+    fill.addColour(0.58, isDisplay ? juce::Colour(0xff0d1115) : panelFill());
+    g.setGradientFill(fill);
+    g.fillRoundedRectangle(b, rounded);
+
+    g.setColour(juce::Colour(0xffffffff).withAlpha(0.08f));
+    g.drawLine(b.getX() + 2.0f, b.getY() + 1.0f, b.getRight() - 2.0f, b.getY() + 1.0f, 1.0f);
+    g.setColour(isHeader ? accent().withAlpha(0.9f) : panelLine());
+    g.drawRoundedRectangle(b.reduced(0.5f), rounded, isHeader ? 1.4f : 1.0f);
+
+    if (!isHeader)
+    {
+        auto titleStrip = b.reduced(1.0f).removeFromTop(24.0f);
+        g.setColour(isDisplay ? juce::Colour(0xff10150f) : juce::Colour(0xff10151b));
+        g.fillRoundedRectangle(titleStrip, 3.0f);
+        g.setColour(isDisplay ? accent().withAlpha(0.36f) : juce::Colour(0xff4a5360).withAlpha(0.55f));
+        g.drawLine(titleStrip.getX() + 8.0f, titleStrip.getBottom() - 1.0f, titleStrip.getRight() - 8.0f, titleStrip.getBottom() - 1.0f);
+    }
 
     if (panelTitle.isNotEmpty())
     {
-        g.setColour(panel == PanelId::Display ? amber() : juce::Colour(0xff9aa7b3));
-        g.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-        g.drawText(panelTitle.toUpperCase(), bounds.reduced(12, 7).removeFromTop(18), juce::Justification::centredLeft);
+        g.setColour(panel == PanelId::Display ? amber() : juce::Colour(0xffb6c0cb));
+        g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+        g.drawText(panelTitle.toUpperCase(), bounds.reduced(12, 7).removeFromTop(16), juce::Justification::centredLeft);
+        if (panel != PanelId::Display)
+        {
+            g.setColour(juce::Colour(0xff6f7b87).withAlpha(0.45f));
+            const auto titleWidth = juce::jlimit(58.0f, 180.0f, static_cast<float>(panelTitle.length()) * 7.0f + 24.0f);
+            g.drawLine(b.getX() + titleWidth, b.getY() + 16.0f, b.getRight() - 12.0f, b.getY() + 16.0f, 0.8f);
+        }
     }
 }
 
