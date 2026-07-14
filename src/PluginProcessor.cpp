@@ -59,6 +59,56 @@ chimera::dsp::FilterMode filterModeFromString(const juce::String& filterType)
     if (type == "highshelf") return chimera::dsp::FilterMode::HighShelf;
     return chimera::dsp::FilterMode::LowPass12;
 }
+
+chimera::dsp::ModSource modSourceFromString(const juce::String& source)
+{
+    const auto id = source.trim().toLowerCase();
+    if (id == "pitcheg") return chimera::dsp::ModSource::PitchEnvelope;
+    if (id == "filtereg") return chimera::dsp::ModSource::FilterEnvelope;
+    if (id == "ampeg") return chimera::dsp::ModSource::AmpEnvelope;
+    if (id == "lfo1") return chimera::dsp::ModSource::Lfo1;
+    if (id == "lfo2") return chimera::dsp::ModSource::Lfo2;
+    if (id == "aftertouch" || id == "modwheel") return chimera::dsp::ModSource::Aftertouch;
+    return chimera::dsp::ModSource::Velocity;
+}
+
+chimera::dsp::ModDestination modDestinationFromString(const juce::String& destination)
+{
+    const auto id = destination.trim().toLowerCase();
+    if (id == "pitch") return chimera::dsp::ModDestination::Pitch;
+    if (id == "cutoff") return chimera::dsp::ModDestination::Cutoff;
+    if (id == "pan") return chimera::dsp::ModDestination::Pan;
+    return chimera::dsp::ModDestination::Amp;
+}
+
+float modSlotSourceValue(chimera::dsp::ModSource source, float velocity, float pitchEg, float filterEg,
+                         float ampEg, float lfo1, float lfo2, float aftertouch)
+{
+    switch (source)
+    {
+        case chimera::dsp::ModSource::Velocity: return velocity;
+        case chimera::dsp::ModSource::PitchEnvelope: return pitchEg;
+        case chimera::dsp::ModSource::FilterEnvelope: return filterEg;
+        case chimera::dsp::ModSource::AmpEnvelope: return ampEg;
+        case chimera::dsp::ModSource::Lfo1: return lfo1;
+        case chimera::dsp::ModSource::Lfo2: return lfo2;
+        case chimera::dsp::ModSource::Aftertouch: return aftertouch;
+    }
+
+    return 0.0f;
+}
+
+std::shared_ptr<chimera::dsp::SampleZone> makeZoneFromElement(const chimera::preset::ElementDefinition& element,
+                                                              const juce::File& sampleFile)
+{
+    auto zone = std::make_shared<chimera::dsp::SampleZone>();
+    zone->setSource(sampleFile);
+    zone->setRootKey(element.rootKey);
+    zone->setKeyRange(element.keyLow, element.keyHigh);
+    zone->setVelocityRange(element.velocityLow, element.velocityHigh);
+    zone->setTuningCents(element.tuningCents);
+    return zone;
+}
 }
 
 ChimeraEngineAudioProcessor::ChimeraEngineAudioProcessor()
@@ -94,6 +144,10 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
 {
     currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
     voiceAgeCounter = 0;
+    lastMonoNotes.fill(-1);
+    pitchBendSemitones.fill(0.0f);
+    modWheelValues.fill(0.0f);
+    aftertouchValues.fill(0.0f);
     arpeggiatorSamplesUntilStep = 0;
     arpeggiatorSamplesUntilGate = 0;
     arpeggiatorWasEnabled = false;
@@ -104,6 +158,10 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
     for (auto& voice : voices)
     {
         for (auto& envelope : voice.ampEnvelopes)
+            envelope.setSampleRate(currentSampleRate);
+        for (auto& envelope : voice.pitchEnvelopes)
+            envelope.setSampleRate(currentSampleRate);
+        for (auto& envelope : voice.filterEnvelopes)
             envelope.setSampleRate(currentSampleRate);
         for (auto& lfo : voice.lfo1)
             lfo.setSampleRate(currentSampleRate);
@@ -116,13 +174,20 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
         }
         for (auto& player : voice.players)
             player.stop();
+        for (auto& player : voice.releasePlayers)
+            player.stop();
         voice.active = false;
+        voice.released = false;
         voice.note = -1;
+        voice.targetNote = -1;
         voice.age = 0;
         voice.elementCount = 0;
         voice.partIndex = 0;
         voice.partLevel = 1.0f;
         voice.partPan = 0.0f;
+        voice.currentPitchCents = 0.0f;
+        voice.targetPitchCents = 0.0f;
+        voice.portamentoStepCents = 0.0f;
     }
 
     for (auto& fx : workstationFx)
@@ -450,25 +515,59 @@ juce::Result ChimeraEngineAudioProcessor::loadPatchFileForPart(int partIndex, co
         if (count >= static_cast<int>(maxElements))
             break;
 
-        auto zone = std::make_shared<chimera::dsp::SampleZone>();
-        zone->setSource(projectRoot().getChildFile(element.samplePath));
-        zone->setRootKey(element.rootKey);
-        zone->setKeyRange(element.keyLow, element.keyHigh);
-        zone->setVelocityRange(element.velocityLow, element.velocityHigh);
-        zone->setTuningCents(element.tuningCents);
+        LoadedElement loaded;
+        loaded.zones.push_back(makeZoneFromElement(element, projectRoot().getChildFile(element.samplePath)));
 
-        if (const auto result = zone->loadAudio(); result.failed())
-            return result;
+        for (const auto& alternate : element.alternateSamples)
+            loaded.zones.push_back(makeZoneFromElement(element, projectRoot().getChildFile(alternate)));
+        for (const auto& releaseSample : element.releaseSamples)
+            loaded.releaseZones.push_back(makeZoneFromElement(element, projectRoot().getChildFile(releaseSample)));
 
-        elements[static_cast<size_t>(count)] = { std::move(zone), element.level, element.pan, filterModeFromString(element.filterType) };
-        elements[static_cast<size_t>(count)].ampAttack = element.ampAttack;
-        elements[static_cast<size_t>(count)].ampSustain = element.ampSustain;
-        elements[static_cast<size_t>(count)].ampRelease = element.ampRelease;
-        elements[static_cast<size_t>(count)].lfo1RateHz = element.lfo1RateHz;
-        elements[static_cast<size_t>(count)].lfo1CutoffDepth = element.lfo1CutoffDepth;
-        elements[static_cast<size_t>(count)].lfo2RateHz = element.lfo2RateHz;
-        elements[static_cast<size_t>(count)].lfo2AmpDepth = element.lfo2AmpDepth;
-        elements[static_cast<size_t>(count)].lfo2PanDepth = element.lfo2PanDepth;
+        for (const auto& zone : loaded.zones)
+            if (const auto result = zone->loadAudio(); result.failed())
+                return result;
+        for (const auto& zone : loaded.releaseZones)
+            if (const auto result = zone->loadAudio(); result.failed())
+                return result;
+
+        if (loaded.zones.empty())
+            return juce::Result::fail("Patch element has no playable zones");
+
+        loaded.alternateMode = element.alternateMode;
+        loaded.level = element.level;
+        loaded.pan = element.pan;
+        loaded.filterMode = filterModeFromString(element.filterType);
+        loaded.ampAttack = element.ampAttack;
+        loaded.ampDecay1 = element.ampDecay1;
+        loaded.ampDecay2 = element.ampDecay2;
+        loaded.ampSustain = element.ampSustain;
+        loaded.ampRelease = element.ampRelease;
+        loaded.pitchAttack = element.pitchEnvelope.attack;
+        loaded.pitchDecay1 = element.pitchEnvelope.decay1;
+        loaded.pitchDecay2 = element.pitchEnvelope.decay2;
+        loaded.pitchSustain = element.pitchEnvelope.sustain;
+        loaded.pitchRelease = element.pitchEnvelope.release;
+        loaded.pitchDepthCents = element.pitchEnvelope.depth;
+        loaded.filterAttack = element.filterEnvelope.attack;
+        loaded.filterDecay1 = element.filterEnvelope.decay1;
+        loaded.filterDecay2 = element.filterEnvelope.decay2;
+        loaded.filterSustain = element.filterEnvelope.sustain;
+        loaded.filterRelease = element.filterEnvelope.release;
+        loaded.filterDepth = element.filterEnvelope.depth;
+        loaded.lfo1RateHz = element.lfo1RateHz;
+        loaded.lfo1CutoffDepth = element.lfo1CutoffDepth;
+        loaded.lfo2RateHz = element.lfo2RateHz;
+        loaded.lfo2AmpDepth = element.lfo2AmpDepth;
+        loaded.lfo2PanDepth = element.lfo2PanDepth;
+        loaded.modSlotCount = std::min(static_cast<int>(element.modSlots.size()), 8);
+        for (int slot = 0; slot < loaded.modSlotCount; ++slot)
+        {
+            loaded.modSlots[static_cast<size_t>(slot)].source = modSourceFromString(element.modSlots[static_cast<size_t>(slot)].source);
+            loaded.modSlots[static_cast<size_t>(slot)].destination = modDestinationFromString(element.modSlots[static_cast<size_t>(slot)].destination);
+            loaded.modSlots[static_cast<size_t>(slot)].depth = element.modSlots[static_cast<size_t>(slot)].depth;
+            loaded.modSlots[static_cast<size_t>(slot)].enabled = element.modSlots[static_cast<size_t>(slot)].enabled;
+        }
+        elements[static_cast<size_t>(count)] = std::move(loaded);
         ++count;
     }
 
@@ -476,6 +575,13 @@ juce::Result ChimeraEngineAudioProcessor::loadPatchFileForPart(int partIndex, co
         return juce::Result::fail("Patch contains no loadable elements");
 
     setActiveElementsForPart(partIndex, std::move(elements), count, patch.metadata.name);
+    {
+        const juce::ScopedLock lock(zoneLock);
+        auto& part = parts[static_cast<size_t>(partIndex)];
+        part.voiceMode = patch.voiceMode;
+        part.portamentoTime = patch.portamentoTime;
+        part.pitchBendRange = patch.pitchBendRange;
+    }
     return juce::Result::ok();
 }
 
@@ -560,8 +666,8 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
                 return;
 
             for (int i = 0; i < part.loadedElementCount; ++i)
-                if (part.loadedElements[static_cast<size_t>(i)].zone != nullptr
-                    && part.loadedElements[static_cast<size_t>(i)].zone->matches(message.getNoteNumber(), message.getVelocity()))
+                if (!part.loadedElements[static_cast<size_t>(i)].zones.empty()
+                    && part.loadedElements[static_cast<size_t>(i)].zones.front()->matches(message.getNoteNumber(), message.getVelocity()))
                     hasMatch = true;
 
             if (!hasMatch)
@@ -606,17 +712,56 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
 
                 for (auto& voice : voices)
                     if (voice.active && voice.partIndex == zone.internalPartIndex && message.getNoteNumber() == voice.note)
-                        for (auto& envelope : voice.ampEnvelopes)
-                            envelope.noteOff();
+                        releaseVoice(voice);
             }
         }
         else
         {
             for (auto& voice : voices)
                 if (voice.active && voice.partIndex == partIndex && message.getNoteNumber() == voice.note)
-                    for (auto& envelope : voice.ampEnvelopes)
-                        envelope.noteOff();
+                    releaseVoice(voice);
         }
+        return;
+    }
+
+    if (message.isPitchWheel())
+    {
+        pitchBendSemitones[static_cast<size_t>(partIndex)] = (static_cast<float>(message.getPitchWheelValue()) - 8192.0f) / 8192.0f
+            * static_cast<float>(parts[static_cast<size_t>(partIndex)].pitchBendRange);
+        return;
+    }
+
+    if (message.isController() && message.getControllerNumber() == 1)
+    {
+        modWheelValues[static_cast<size_t>(partIndex)] = std::clamp(static_cast<float>(message.getControllerValue()) / 127.0f, 0.0f, 1.0f);
+        return;
+    }
+
+    if (message.isAftertouch())
+    {
+        aftertouchValues[static_cast<size_t>(partIndex)] = std::clamp(static_cast<float>(message.getAfterTouchValue()) / 127.0f, 0.0f, 1.0f);
+        return;
+    }
+
+    if (message.isChannelPressure())
+    {
+        aftertouchValues[static_cast<size_t>(partIndex)] = std::clamp(static_cast<float>(message.getChannelPressureValue()) / 127.0f, 0.0f, 1.0f);
+    }
+}
+
+void ChimeraEngineAudioProcessor::releaseVoice(ActiveVoice& voice)
+{
+    if (voice.released)
+        return;
+
+    voice.released = true;
+    for (int i = 0; i < voice.elementCount; ++i)
+    {
+        if (!voice.releasePlayers[static_cast<size_t>(i)].isPlaying())
+            voice.releasePlayers[static_cast<size_t>(i)].start(voice.note, currentSampleRate);
+        voice.ampEnvelopes[static_cast<size_t>(i)].noteOff();
+        voice.pitchEnvelopes[static_cast<size_t>(i)].noteOff();
+        voice.filterEnvelopes[static_cast<size_t>(i)].noteOff();
     }
 }
 
@@ -632,19 +777,64 @@ ChimeraEngineAudioProcessor::ActiveVoice& ChimeraEngineAudioProcessor::allocateV
     });
 }
 
+void ChimeraEngineAudioProcessor::stopVoicesForNote(int partIndex, int note)
+{
+    for (auto& voice : voices)
+        if (voice.active && voice.partIndex == partIndex && (note < 0 || voice.note == note))
+            releaseVoice(voice);
+}
+
 void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int partIndex, int note, int velocity, float level, float pan)
 {
-    const auto& part = parts[static_cast<size_t>(std::clamp(partIndex, 0, static_cast<int>(maxParts) - 1))];
+    auto& part = parts[static_cast<size_t>(std::clamp(partIndex, 0, static_cast<int>(maxParts) - 1))];
     if (!part.enabled)
         return;
 
+    if (part.voiceMode == "mono" || part.voiceMode == "legato")
+    {
+        const auto priorNote = lastMonoNotes[static_cast<size_t>(partIndex)];
+        const auto legato = part.voiceMode == "legato" && priorNote >= 0;
+        for (auto& voice : voices)
+        {
+            if (!voice.active || voice.partIndex != partIndex)
+                continue;
+
+            if (legato)
+            {
+                voice.targetNote = note;
+                voice.targetPitchCents = static_cast<float>(note - voice.note) * 100.0f;
+                const auto portamentoSamples = std::max(1.0f, part.portamentoTime * static_cast<float>(currentSampleRate));
+                voice.portamentoStepCents = (voice.targetPitchCents - voice.currentPitchCents) / portamentoSamples;
+                lastMonoNotes[static_cast<size_t>(partIndex)] = note;
+                return;
+            }
+
+            releaseVoice(voice);
+        }
+    }
+
     target.partIndex = partIndex;
     target.note = note;
+    target.targetNote = note;
     target.age = ++voiceAgeCounter;
     target.velocityGain = std::clamp(static_cast<float>(velocity) / 127.0f, 0.0f, 1.0f);
     target.partLevel = std::clamp(level, 0.0f, 2.0f);
     target.partPan = std::clamp(pan, -1.0f, 1.0f);
+    target.currentPitchCents = 0.0f;
+    target.targetPitchCents = 0.0f;
+    target.portamentoStepCents = 0.0f;
+    target.released = false;
     for (auto& envelope : target.ampEnvelopes)
+    {
+        envelope.setSampleRate(currentSampleRate);
+        envelope.noteOff();
+    }
+    for (auto& envelope : target.pitchEnvelopes)
+    {
+        envelope.setSampleRate(currentSampleRate);
+        envelope.noteOff();
+    }
+    for (auto& envelope : target.filterEnvelopes)
     {
         envelope.setSampleRate(currentSampleRate);
         envelope.noteOff();
@@ -658,35 +848,57 @@ void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int partIndex,
         lfo.setSampleRate(currentSampleRate);
     for (auto& lfo : target.lfo2)
         lfo.setSampleRate(currentSampleRate);
+    for (auto& player : target.releasePlayers)
+        player.stop();
     target.elementCount = 0;
 
     for (int i = 0; i < part.loadedElementCount; ++i)
     {
-        const auto& element = part.loadedElements[static_cast<size_t>(i)];
-        if (element.zone == nullptr || !element.zone->matches(note, velocity))
+        auto& element = part.loadedElements[static_cast<size_t>(i)];
+        if (element.zones.empty() || !element.zones.front()->matches(note, velocity))
             continue;
 
         const auto playerIndex = static_cast<size_t>(target.elementCount);
-        target.players[playerIndex].setZone(element.zone);
+        auto zoneIndex = 0;
+        if (element.zones.size() > 1 && element.alternateMode == "roundrobin")
+            zoneIndex = element.roundRobinCounter++ % static_cast<int>(element.zones.size());
+        else if (element.zones.size() > 1 && element.alternateMode == "random")
+            zoneIndex = static_cast<int>((voiceAgeCounter + static_cast<uint64_t>(i * 1103515245)) % element.zones.size());
+
+        target.players[playerIndex].setZone(element.zones[static_cast<size_t>(zoneIndex)]);
         target.players[playerIndex].start(target.note, currentSampleRate);
+        if (!element.releaseZones.empty())
+            target.releasePlayers[playerIndex].setZone(element.releaseZones.front());
         target.elementLevels[playerIndex] = element.level;
         target.elementPans[playerIndex] = element.pan;
         target.elementFilterModes[playerIndex] = element.filterMode;
+        target.pitchEnvelopeDepths[playerIndex] = element.pitchDepthCents;
+        target.filterEnvelopeDepths[playerIndex] = element.filterDepth;
         target.lfo1CutoffDepths[playerIndex] = element.lfo1CutoffDepth;
         target.lfo2AmpDepths[playerIndex] = element.lfo2AmpDepth;
         target.lfo2PanDepths[playerIndex] = element.lfo2PanDepth;
+        target.modSlotCounts[playerIndex] = element.modSlotCount;
+        target.modSlots[playerIndex] = element.modSlots;
         target.lfo1[playerIndex].setFrequency(element.lfo1RateHz);
         target.lfo1[playerIndex].reset();
         target.lfo2[playerIndex].setFrequency(element.lfo2RateHz);
         target.lfo2[playerIndex].reset();
         target.filters[playerIndex].setMode(element.filterMode);
         target.ampEnvelopes[playerIndex].setStages(*parameters.getRawParameterValue("attack") + element.ampAttack,
-                                                   0.05f,
-                                                   0.05f,
+                                                   element.ampDecay1,
+                                                   element.ampDecay2,
                                                    element.ampSustain,
                                                    *parameters.getRawParameterValue("release") + element.ampRelease,
                                                    chimera::dsp::Curve::Linear);
         target.ampEnvelopes[playerIndex].noteOn();
+        target.pitchEnvelopes[playerIndex].setStages(element.pitchAttack, element.pitchDecay1, element.pitchDecay2,
+                                                     element.pitchSustain, element.pitchRelease,
+                                                     chimera::dsp::Curve::Linear);
+        target.pitchEnvelopes[playerIndex].noteOn();
+        target.filterEnvelopes[playerIndex].setStages(element.filterAttack, element.filterDecay1, element.filterDecay2,
+                                                      element.filterSustain, element.filterRelease,
+                                                      chimera::dsp::Curve::Linear);
+        target.filterEnvelopes[playerIndex].noteOn();
         ++target.elementCount;
 
         if (target.elementCount >= static_cast<int>(maxElements))
@@ -694,6 +906,7 @@ void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int partIndex,
     }
 
     target.active = true;
+    lastMonoNotes[static_cast<size_t>(partIndex)] = note;
 }
 
 void ChimeraEngineAudioProcessor::advanceArpeggiator()
@@ -757,8 +970,7 @@ void ChimeraEngineAudioProcessor::stopActiveArpeggiatorNotes()
     for (const auto activeNote : activeArpeggiatorNotes)
         for (auto& voice : voices)
             if (voice.active && voice.partIndex == activeNote.partIndex && voice.note == activeNote.note)
-                for (auto& envelope : voice.ampEnvelopes)
-                    envelope.noteOff();
+                releaseVoice(voice);
 
     activeArpeggiatorNotes.clear();
 }
@@ -792,25 +1004,65 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
 
         auto anyPlaying = false;
         auto anyEnvelopeActive = false;
+        const auto partIndex = static_cast<size_t>(std::clamp(voice.partIndex, 0, static_cast<int>(maxParts) - 1));
+        if (std::abs(voice.currentPitchCents - voice.targetPitchCents) > std::abs(voice.portamentoStepCents))
+            voice.currentPitchCents += voice.portamentoStepCents;
+        else
+            voice.currentPitchCents = voice.targetPitchCents;
+
         for (int i = 0; i < voice.elementCount; ++i)
         {
             auto& envelope = voice.ampEnvelopes[static_cast<size_t>(i)];
             const auto amp = envelope.process();
             anyEnvelopeActive = anyEnvelopeActive || envelope.isActive();
+            const auto pitchEg = voice.pitchEnvelopes[static_cast<size_t>(i)].process();
+            const auto filterEg = voice.filterEnvelopes[static_cast<size_t>(i)].process();
+            anyEnvelopeActive = anyEnvelopeActive || voice.pitchEnvelopes[static_cast<size_t>(i)].isActive()
+                || voice.filterEnvelopes[static_cast<size_t>(i)].isActive();
 
             auto& filter = voice.filters[static_cast<size_t>(i)];
             filter.setMode(voice.elementFilterModes[static_cast<size_t>(i)]);
             const auto lfo1 = voice.lfo1[static_cast<size_t>(i)].process();
             const auto lfo2 = voice.lfo2[static_cast<size_t>(i)].process();
-            const auto cutoffMod = std::pow(2.0f, lfo1 * voice.lfo1CutoffDepths[static_cast<size_t>(i)] * 2.0f);
+            auto modPitchCents = 0.0f;
+            auto modCutoff = 0.0f;
+            auto modAmp = 0.0f;
+            auto modPan = 0.0f;
+            const auto expressive = std::max(modWheelValues[partIndex], aftertouchValues[partIndex]);
+            for (int slot = 0; slot < voice.modSlotCounts[static_cast<size_t>(i)]; ++slot)
+            {
+                const auto& modSlot = voice.modSlots[static_cast<size_t>(i)][static_cast<size_t>(slot)];
+                if (!modSlot.enabled)
+                    continue;
+
+                const auto source = modSlotSourceValue(modSlot.source, voice.velocityGain, pitchEg, filterEg, amp,
+                                                       lfo1, lfo2, expressive);
+                switch (modSlot.destination)
+                {
+                    case chimera::dsp::ModDestination::Pitch: modPitchCents += source * modSlot.depth * 100.0f; break;
+                    case chimera::dsp::ModDestination::Cutoff: modCutoff += source * modSlot.depth; break;
+                    case chimera::dsp::ModDestination::Amp: modAmp += source * modSlot.depth; break;
+                    case chimera::dsp::ModDestination::Pan: modPan += source * modSlot.depth; break;
+                }
+            }
+
+            const auto cutoffMod = std::pow(2.0f, (lfo1 * voice.lfo1CutoffDepths[static_cast<size_t>(i)] * 2.0f)
+                                                  + filterEg * voice.filterEnvelopeDepths[static_cast<size_t>(i)]
+                                                  + modCutoff);
             filter.setCutoff(std::clamp(*parameters.getRawParameterValue("cutoff") * cutoffMod, 20.0f, 20000.0f));
             filter.setResonance(*parameters.getRawParameterValue("resonance"));
 
             auto& player = voice.players[static_cast<size_t>(i)];
-            const auto filtered = filter.process(player.process());
-            const auto lfoAmp = std::clamp(1.0f + lfo2 * voice.lfo2AmpDepths[static_cast<size_t>(i)], 0.0f, 2.0f);
+            const auto pitchCents = pitchBendSemitones[partIndex] * 100.0f
+                + voice.currentPitchCents
+                + pitchEg * voice.pitchEnvelopeDepths[static_cast<size_t>(i)]
+                + modPitchCents;
+            const auto pitchRatio = std::pow(2.0f, pitchCents / 1200.0f);
+            const auto releaseSample = voice.releasePlayers[static_cast<size_t>(i)].process(pitchRatio);
+            const auto filtered = filter.process(player.process(pitchRatio) + releaseSample);
+            const auto lfoAmp = std::clamp(1.0f + lfo2 * voice.lfo2AmpDepths[static_cast<size_t>(i)] + modAmp, 0.0f, 2.0f);
             const auto lfoPan = lfo2 * voice.lfo2PanDepths[static_cast<size_t>(i)];
-            const auto [leftPan, rightPan] = panGains(voice.elementPans[static_cast<size_t>(i)] + voice.partPan + lfoPan);
+            const auto [leftPan, rightPan] = panGains(voice.elementPans[static_cast<size_t>(i)] + voice.partPan + lfoPan + modPan);
             const auto element = filtered
                 * voice.elementLevels[static_cast<size_t>(i)]
                 * voice.partLevel
@@ -821,7 +1073,7 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
 
             output.left += element * leftPan;
             output.right += element * rightPan;
-            anyPlaying = anyPlaying || player.isPlaying();
+            anyPlaying = anyPlaying || player.isPlaying() || voice.releasePlayers[static_cast<size_t>(i)].isPlaying();
         }
 
         if (!anyPlaying || !anyEnvelopeActive)

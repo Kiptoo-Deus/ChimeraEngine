@@ -27,6 +27,10 @@ FILTER_TYPES = {
     "lowShelf",
     "highShelf",
 }
+VOICE_MODES = {"poly", "mono", "legato"}
+ALTERNATE_MODES = {"off", "roundrobin", "random"}
+MOD_SOURCES = {"velocity", "modwheel", "aftertouch", "lfo1", "lfo2", "pitcheg", "filtereg", "ampeg"}
+MOD_DESTINATIONS = {"pitch", "cutoff", "amp", "pan"}
 
 
 def fail(message: str) -> int:
@@ -47,6 +51,17 @@ def validate_patch(path: pathlib.Path) -> list[str]:
         errors.append(f"{path}: missing name")
     if not data.get("category"):
         errors.append(f"{path}: missing category")
+    voice_mode = data.get("voiceMode", "poly")
+    if not isinstance(voice_mode, str) or voice_mode not in VOICE_MODES:
+        errors.append(f"{path}: voiceMode must be poly, mono, or legato")
+
+    portamento_time = data.get("portamentoTime", 0.0)
+    if not isinstance(portamento_time, (int, float)) or portamento_time < 0.0 or portamento_time > 10.0:
+        errors.append(f"{path}: portamentoTime must be between 0.0 and 10.0")
+
+    pitch_bend_range = data.get("pitchBendRange", 2)
+    if not isinstance(pitch_bend_range, int) or pitch_bend_range < 0 or pitch_bend_range > 48:
+        errors.append(f"{path}: pitchBendRange must be between 0 and 48")
 
     elements = data.get("elements")
     if not isinstance(elements, list) or not elements:
@@ -62,6 +77,19 @@ def validate_patch(path: pathlib.Path) -> list[str]:
             errors.append(f"{path}: element {index} missing sample")
         elif not (ROOT / sample).is_file():
             errors.append(f"{path}: element {index} sample not found: {sample}")
+
+        for key in ("alternates", "releaseSamples"):
+            values = element.get(key, [])
+            if not isinstance(values, list) or not all(isinstance(v, str) and v for v in values):
+                errors.append(f"{path}: element {index} {key} must be a string array")
+            else:
+                for sample_path in values:
+                    if not (ROOT / sample_path).is_file():
+                        errors.append(f"{path}: element {index} sample not found: {sample_path}")
+
+        alternate_mode = element.get("alternateMode", "off")
+        if not isinstance(alternate_mode, str) or alternate_mode not in ALTERNATE_MODES:
+            errors.append(f"{path}: element {index} alternateMode is unsupported: {alternate_mode}")
 
         for key, low_default, high_default in [("keyRange", 0, 127), ("velocityRange", 1, 127)]:
             value = element.get(key, [low_default, high_default])
@@ -90,6 +118,11 @@ def validate_patch(path: pathlib.Path) -> list[str]:
         if not isinstance(amp_attack, (int, float)) or amp_attack < 0.0 or amp_attack > 10.0:
             errors.append(f"{path}: element {index} ampAttack must be between 0.0 and 10.0")
 
+        for key in ("ampDecay1", "ampDecay2"):
+            value = element.get(key, 0.05)
+            if not isinstance(value, (int, float)) or value < 0.0 or value > 10.0:
+                errors.append(f"{path}: element {index} {key} must be between 0.0 and 10.0")
+
         amp_sustain = element.get("ampSustain", 1.0)
         if not isinstance(amp_sustain, (int, float)) or amp_sustain < 0.0 or amp_sustain > 1.0:
             errors.append(f"{path}: element {index} ampSustain must be between 0.0 and 1.0")
@@ -107,6 +140,43 @@ def validate_patch(path: pathlib.Path) -> list[str]:
             value = element.get(key, 0.0)
             if not isinstance(value, (int, float)) or value < 0.0 or value > 1.0:
                 errors.append(f"{path}: element {index} {key} must be between 0.0 and 1.0")
+
+        for key, min_depth, max_depth in (("pitchEnvelope", -4800.0, 4800.0), ("filterEnvelope", -1.0, 1.0)):
+            envelope = element.get(key, {})
+            if envelope and not isinstance(envelope, dict):
+                errors.append(f"{path}: element {index} {key} must be an object")
+                continue
+            if not isinstance(envelope, dict):
+                envelope = {}
+            for env_key, default, low, high in (
+                ("attack", 0.0, 0.0, 10.0),
+                ("decay1", 0.05, 0.0, 10.0),
+                ("decay2", 0.05, 0.0, 10.0),
+                ("sustain", 1.0, 0.0, 1.0),
+                ("release", 0.0, 0.0, 20.0),
+                ("depth", 0.0, min_depth, max_depth),
+            ):
+                value = envelope.get(env_key, default)
+                if not isinstance(value, (int, float)) or value < low or value > high:
+                    errors.append(f"{path}: element {index} {key}.{env_key} must be between {low} and {high}")
+
+        mod_slots = element.get("modSlots", [])
+        if not isinstance(mod_slots, list) or len(mod_slots) > 8:
+            errors.append(f"{path}: element {index} modSlots must be a list with at most 8 slots")
+        else:
+            for slot_index, slot in enumerate(mod_slots):
+                if not isinstance(slot, dict):
+                    errors.append(f"{path}: element {index} modSlot {slot_index} must be an object")
+                    continue
+                source = slot.get("source", "velocity")
+                destination = slot.get("destination", "amp")
+                depth = slot.get("depth", 0.0)
+                if source not in MOD_SOURCES:
+                    errors.append(f"{path}: element {index} modSlot {slot_index} source is unsupported: {source}")
+                if destination not in MOD_DESTINATIONS:
+                    errors.append(f"{path}: element {index} modSlot {slot_index} destination is unsupported: {destination}")
+                if not isinstance(depth, (int, float)) or depth < -4.0 or depth > 4.0:
+                    errors.append(f"{path}: element {index} modSlot {slot_index} depth must be between -4.0 and 4.0")
 
     return errors
 

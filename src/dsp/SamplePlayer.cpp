@@ -26,7 +26,7 @@ void SamplePlayer::stop()
     playing = false;
 }
 
-float SamplePlayer::process()
+float SamplePlayer::process(float pitchRatio)
 {
     if (!playing || zone == nullptr)
         return 0.0f;
@@ -41,7 +41,7 @@ float SamplePlayer::process()
     const auto frac = static_cast<float>(position - static_cast<double>(index));
     const auto a = zone->sample(0, index);
     const auto b = zone->sample(0, index + 1);
-    position += increment;
+    position += increment * std::max(0.01f, pitchRatio);
     return a + (b - a) * frac;
 }
 }

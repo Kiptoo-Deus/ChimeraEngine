@@ -1,0 +1,59 @@
+{
+  "format": "chpatch",
+  "version": 1,
+  "name": "Expressive Mono",
+  "category": "Synth",
+  "voiceMode": "legato",
+  "portamentoTime": 0.025,
+  "pitchBendRange": 12,
+  "elements": [
+    {
+      "sample": "samples/Synth/saw_C4_24bit.wav",
+      "alternates": [
+        "samples/Synth/square_C4_24bit.wav",
+        "samples/Synth/triangle_C4_24bit.wav"
+      ],
+      "releaseSamples": [
+        "samples/Synth/sine_C4_24bit.wav"
+      ],
+      "alternateMode": "roundrobin",
+      "rootKey": 60,
+      "keyRange": [0, 127],
+      "velocityRange": [1, 127],
+      "level": 0.75,
+      "pan": 0.0,
+      "filterType": "lowPass24",
+      "ampAttack": 0.0,
+      "ampDecay1": 0.04,
+      "ampDecay2": 0.12,
+      "ampSustain": 0.8,
+      "ampRelease": 0.08,
+      "pitchEnvelope": {
+        "attack": 0.0,
+        "decay1": 0.04,
+        "decay2": 0.12,
+        "sustain": 0.0,
+        "release": 0.03,
+        "depth": 120.0
+      },
+      "filterEnvelope": {
+        "attack": 0.0,
+        "decay1": 0.05,
+        "decay2": 0.16,
+        "sustain": 0.35,
+        "release": 0.08,
+        "depth": 0.6
+      },
+      "lfo1RateHz": 5.0,
+      "lfo1CutoffDepth": 0.2,
+      "lfo2RateHz": 4.0,
+      "lfo2AmpDepth": 0.08,
+      "lfo2PanDepth": 0.25,
+      "modSlots": [
+        { "source": "modwheel", "destination": "cutoff", "depth": 0.7, "enabled": true },
+        { "source": "aftertouch", "destination": "pitch", "depth": 0.4, "enabled": true },
+        { "source": "velocity", "destination": "amp", "depth": 0.25, "enabled": true }
+      ]
+    }
+  ]
+}

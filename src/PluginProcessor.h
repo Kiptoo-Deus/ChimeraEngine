@@ -4,6 +4,7 @@
 #include "dsp/Envelope.h"
 #include "dsp/Filter.h"
 #include "dsp/Lfo.h"
+#include "dsp/ModulationMatrix.h"
 #include "dsp/SamplePlayer.h"
 #include "dsp/SampleZone.h"
 #include "engine/Arpeggiator.h"
@@ -73,41 +74,72 @@ private:
 
     struct LoadedElement
     {
-        std::shared_ptr<chimera::dsp::SampleZone> zone;
+        std::vector<std::shared_ptr<chimera::dsp::SampleZone>> zones;
+        std::vector<std::shared_ptr<chimera::dsp::SampleZone>> releaseZones;
+        juce::String alternateMode { "off" };
         float level = 1.0f;
         float pan = 0.0f;
         chimera::dsp::FilterMode filterMode = chimera::dsp::FilterMode::LowPass12;
         float ampAttack = 0.0f;
+        float ampDecay1 = 0.05f;
+        float ampDecay2 = 0.05f;
         float ampSustain = 1.0f;
         float ampRelease = 0.0f;
+        float pitchAttack = 0.0f;
+        float pitchDecay1 = 0.05f;
+        float pitchDecay2 = 0.05f;
+        float pitchSustain = 1.0f;
+        float pitchRelease = 0.0f;
+        float pitchDepthCents = 0.0f;
+        float filterAttack = 0.0f;
+        float filterDecay1 = 0.05f;
+        float filterDecay2 = 0.05f;
+        float filterSustain = 1.0f;
+        float filterRelease = 0.0f;
+        float filterDepth = 0.0f;
         float lfo1RateHz = 0.0f;
         float lfo1CutoffDepth = 0.0f;
         float lfo2RateHz = 0.0f;
         float lfo2AmpDepth = 0.0f;
         float lfo2PanDepth = 0.0f;
+        std::array<chimera::dsp::ModSlot, 8> modSlots {};
+        int modSlotCount = 0;
+        int roundRobinCounter = 0;
     };
 
     struct ActiveVoice
     {
         std::array<chimera::dsp::SamplePlayer, 8> players;
+        std::array<chimera::dsp::SamplePlayer, 8> releasePlayers;
         std::array<chimera::dsp::Filter, 8> filters;
         std::array<chimera::dsp::Envelope, 8> ampEnvelopes;
+        std::array<chimera::dsp::Envelope, 8> pitchEnvelopes;
+        std::array<chimera::dsp::Envelope, 8> filterEnvelopes;
         std::array<chimera::dsp::Lfo, 8> lfo1;
         std::array<chimera::dsp::Lfo, 8> lfo2;
         std::array<float, 8> elementLevels {};
         std::array<float, 8> elementPans {};
         std::array<chimera::dsp::FilterMode, 8> elementFilterModes {};
+        std::array<float, 8> pitchEnvelopeDepths {};
+        std::array<float, 8> filterEnvelopeDepths {};
         std::array<float, 8> lfo1CutoffDepths {};
         std::array<float, 8> lfo2AmpDepths {};
         std::array<float, 8> lfo2PanDepths {};
+        std::array<std::array<chimera::dsp::ModSlot, 8>, 8> modSlots {};
+        std::array<int, 8> modSlotCounts {};
         int elementCount = 0;
         int partIndex = 0;
         int note = -1;
+        int targetNote = -1;
         uint64_t age = 0;
         float velocityGain = 0.0f;
         float partLevel = 1.0f;
         float partPan = 0.0f;
+        float currentPitchCents = 0.0f;
+        float targetPitchCents = 0.0f;
+        float portamentoStepCents = 0.0f;
         bool active = false;
+        bool released = false;
     };
 
     struct PartState
@@ -115,6 +147,9 @@ private:
         std::array<LoadedElement, 8> loadedElements;
         int loadedElementCount = 0;
         juce::String patchName { "Sine" };
+        juce::String voiceMode { "poly" };
+        float portamentoTime = 0.0f;
+        int pitchBendRange = 2;
         float level = 1.0f;
         float pan = 0.0f;
         bool enabled = true;
@@ -143,6 +178,8 @@ private:
     void setActiveElementsForPart(int partIndex, std::array<LoadedElement, maxElements> elements, int count,
                                   const juce::String& patchName);
     void handleMidiMessage(const juce::MidiMessage& message);
+    void stopVoicesForNote(int partIndex, int note);
+    void releaseVoice(ActiveVoice& voice);
     ActiveVoice& allocateVoice();
     void startVoice(ActiveVoice& target, int partIndex, int note, int velocity, float level = 1.0f, float pan = 0.0f);
     void advanceArpeggiator();
@@ -156,6 +193,10 @@ private:
     juce::MidiBuffer pendingPreviewMidi;
     juce::CriticalSection zoneLock;
     std::array<PartState, maxParts> parts;
+    std::array<int, maxParts> lastMonoNotes {};
+    std::array<float, maxParts> pitchBendSemitones {};
+    std::array<float, maxParts> modWheelValues {};
+    std::array<float, maxParts> aftertouchValues {};
     juce::String currentPatchName { "Sine" };
     std::array<ActiveVoice, maxVoices> voices;
     chimera::engine::Arpeggiator arpeggiator;

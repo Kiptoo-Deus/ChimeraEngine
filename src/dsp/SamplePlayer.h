@@ -11,7 +11,7 @@ public:
     void setZone(std::shared_ptr<SampleZone> newZone);
     void start(int midiNote, double outputSampleRate);
     void stop();
-    float process();
+    float process(float pitchRatio = 1.0f);
     bool isPlaying() const { return playing; }
     double getPosition() const { return position; }
 

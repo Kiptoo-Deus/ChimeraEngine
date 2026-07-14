@@ -119,6 +119,25 @@ int main()
     assert(lfoPanLeft > 0.01f && lfoPanRight > 0.01f);
     assert(std::abs(lfoPanLeft - lfoPanRight) > 0.001f);
 
+    ChimeraEngineAudioProcessor expressiveProcessor;
+    expressiveProcessor.prepareToPlay(48000.0, 512);
+    expressiveProcessor.getParameters().getParameter("fxMix")->setValueNotifyingHost(0.0f);
+    assert(expressiveProcessor.loadSynthPreset("Expressive Mono").wasOk());
+    juce::MidiBuffer expressiveMidi;
+    expressiveMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    expressiveMidi.addEvent(juce::MidiMessage::controllerEvent(1, 1, 96), 64);
+    expressiveMidi.addEvent(juce::MidiMessage::channelPressureChange(1, 80), 96);
+    expressiveMidi.addEvent(juce::MidiMessage::pitchWheel(1, 12000), 128);
+    expressiveMidi.addEvent(juce::MidiMessage::noteOn(1, 67, juce::uint8(100)), 192);
+    const auto expressiveSum = renderAndSum(expressiveProcessor, expressiveMidi, 512);
+    assert(expressiveSum > 0.01f);
+    assert(std::isfinite(expressiveSum));
+    juce::MidiBuffer expressiveRelease;
+    expressiveRelease.addEvent(juce::MidiMessage::noteOff(1, 67), 0);
+    const auto expressiveReleaseSum = renderAndSum(expressiveProcessor, expressiveRelease, 512);
+    assert(expressiveReleaseSum > 0.0f);
+    assert(std::isfinite(expressiveReleaseSum));
+
     juce::MidiBuffer lowVelocityMidi;
     lowVelocityMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(40)), 0);
     const auto lowVelocitySum = renderAndSum(presetProcessor, lowVelocityMidi, 512);
