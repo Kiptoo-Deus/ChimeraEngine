@@ -48,6 +48,7 @@ target_sources(ChimeraEngine PRIVATE
     src/engine/Performance.cpp
     src/engine/SampleLibrary.cpp
     src/engine/Sequencer.cpp
+    src/engine/SequencerIO.cpp
     src/engine/VoiceAllocator.cpp
     src/fx/FxChain.cpp
     src/gui/LookAndFeel.cpp
@@ -92,6 +93,7 @@ add_executable(ChimeraEngineTests
     src/engine/Performance.cpp
     src/engine/SampleLibrary.cpp
     src/engine/Sequencer.cpp
+    src/engine/SequencerIO.cpp
     src/engine/VoiceAllocator.cpp
     src/fx/FxChain.cpp
     src/preset/Preset.cpp
@@ -120,6 +122,7 @@ add_executable(ChimeraEngineProcessorTests
     src/engine/Performance.cpp
     src/engine/SampleLibrary.cpp
     src/engine/Sequencer.cpp
+    src/engine/SequencerIO.cpp
     src/engine/VoiceAllocator.cpp
     src/fx/FxChain.cpp
     src/gui/LookAndFeel.cpp

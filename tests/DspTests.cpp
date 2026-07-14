@@ -11,6 +11,7 @@
 #include "engine/Performance.h"
 #include "engine/SampleLibrary.h"
 #include "engine/Sequencer.h"
+#include "engine/SequencerIO.h"
 #include "engine/VoiceAllocator.h"
 #include "fx/FxChain.h"
 #include "preset/Preset.h"
@@ -329,12 +330,30 @@ void testSequencer()
     assert(song.track(0).noteCount() == 1);
     assert(song.track(99).noteCount() == 0);
     assert(sequencer.totalNoteCount() == 2);
+    assert(song.recordNote(1, 960, 120, 67, 80, 3));
+    assert(song.addTempoEvent({ 960, 140.0 }));
+    assert(!song.addTempoEvent({ 0, 400.0 }));
+    assert(song.addSceneEvent({ 960, 2 }));
+    assert(!song.addSceneEvent({ -1, 2 }));
+    const auto playback = song.collectPlaybackEvents(0, 1200);
+    assert(playback.size() == 6);
+    song.clearTrack(1);
+    assert(song.track(1).noteCount() == 0);
 
     auto& pattern = sequencer.pattern(0);
     pattern.setSectionMeasures(0, 512);
     assert(pattern.sectionMeasures(0) == 256);
     pattern.setSectionMeasures(0, 0);
     assert(pattern.sectionMeasures(0) == 1);
+    assert(pattern.addPhraseNote(0, 0, { 0, 240, 72, 100, 1 }));
+    assert(pattern.section(0).tracks[0].noteCount() == 1);
+
+    const auto midiFile = juce::File::createTempFile("chimera-sequencer.mid");
+    assert(chimera::engine::exportSongToMidiFile(song, midiFile).wasOk());
+    chimera::engine::Song importedSong;
+    assert(chimera::engine::importSongFromMidiFile(midiFile, importedSong).wasOk());
+    assert(importedSong.noteCount() >= 2);
+    midiFile.deleteFile();
 }
 
 void testFxProcessors()

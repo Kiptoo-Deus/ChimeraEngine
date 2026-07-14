@@ -27,7 +27,13 @@ bool SequenceTrack::addNote(NoteEvent event)
         return false;
 
     notes.push_back(event);
+    std::sort(notes.begin(), notes.end(), [](const auto& a, const auto& b) { return a.tick < b.tick; });
     return true;
+}
+
+void SequenceTrack::clear()
+{
+    notes.clear();
 }
 
 bool Song::addNote(int trackIndex, NoteEvent event)
@@ -36,6 +42,17 @@ bool Song::addNote(int trackIndex, NoteEvent event)
         return false;
 
     return tracks[static_cast<size_t>(trackIndex)].addNote(event);
+}
+
+bool Song::recordNote(int trackIndex, int tick, int durationTicks, int note, int velocity, int channel)
+{
+    return addNote(trackIndex, { tick, durationTicks, note, velocity, channel });
+}
+
+void Song::clearTrack(int trackIndex)
+{
+    if (trackIndex >= 0 && trackIndex < trackCount)
+        tracks[static_cast<size_t>(trackIndex)].clear();
 }
 
 int Song::noteCount() const
@@ -68,6 +85,56 @@ void Song::setTempo(double bpm)
     tempoBpm = std::clamp(bpm, static_cast<double>(Sequencer::minTempo), static_cast<double>(Sequencer::maxTempo));
 }
 
+bool Song::addTempoEvent(TempoEvent event)
+{
+    if (event.tick < 0 || event.bpm < Sequencer::minTempo || event.bpm > Sequencer::maxTempo)
+        return false;
+
+    tempoEvents.push_back(event);
+    std::sort(tempoEvents.begin(), tempoEvents.end(), [](const auto& a, const auto& b) { return a.tick < b.tick; });
+    return true;
+}
+
+bool Song::addSceneEvent(SceneEvent event)
+{
+    if (event.tick < 0 || event.scene < 0 || event.scene > 127)
+        return false;
+
+    sceneEvents.push_back(event);
+    std::sort(sceneEvents.begin(), sceneEvents.end(), [](const auto& a, const auto& b) { return a.tick < b.tick; });
+    return true;
+}
+
+std::vector<PlaybackEvent> Song::collectPlaybackEvents(int startTick, int endTick) const
+{
+    std::vector<PlaybackEvent> events;
+    if (startTick < 0 || endTick <= startTick)
+        return events;
+
+    for (int trackIndex = 0; trackIndex < trackCount; ++trackIndex)
+    {
+        const auto& sequenceTrack = tracks[static_cast<size_t>(trackIndex)];
+        for (const auto& note : sequenceTrack.getNotes())
+        {
+            if (note.tick >= startTick && note.tick < endTick)
+                events.push_back({ note.tick, trackIndex, note, true });
+
+            const auto offTick = note.tick + note.durationTicks;
+            if (offTick >= startTick && offTick < endTick)
+                events.push_back({ offTick, trackIndex, note, false });
+        }
+    }
+
+    std::sort(events.begin(), events.end(),
+              [](const auto& a, const auto& b)
+              {
+                  if (a.tick != b.tick)
+                      return a.tick < b.tick;
+                  return a.noteOn && !b.noteOn;
+              });
+    return events;
+}
+
 PatternSection& Pattern::section(int index)
 {
     if (index < 0 || index >= sectionCount)
@@ -95,6 +162,14 @@ void Pattern::setSectionMeasures(int index, int measures)
 int Pattern::sectionMeasures(int index) const
 {
     return section(index).measureCount;
+}
+
+bool Pattern::addPhraseNote(int sectionIndex, int trackIndex, NoteEvent event)
+{
+    if (sectionIndex < 0 || sectionIndex >= sectionCount || trackIndex < 0 || trackIndex >= 16)
+        return false;
+
+    return sections[static_cast<size_t>(sectionIndex)].tracks[static_cast<size_t>(trackIndex)].addNote(event);
 }
 
 Song& Sequencer::song(int index)
