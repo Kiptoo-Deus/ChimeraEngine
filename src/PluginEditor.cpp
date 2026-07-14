@@ -484,6 +484,202 @@ private:
     WorkstationPage page = WorkstationPage::Demo;
 };
 
+class ChimeraEngineAudioProcessorEditor::MixerEditor final : public juce::Component
+{
+public:
+    explicit MixerEditor(ChimeraEngineAudioProcessor& processor)
+        : owner(processor)
+    {
+        setWantsKeyboardFocus(false);
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        const auto bounds = getLocalBounds().toFloat();
+        g.setColour(juce::Colour(0xff07090c));
+        g.fillRoundedRectangle(bounds, 5.0f);
+
+        const auto strips = stripBounds();
+        for (int part = 0; part < static_cast<int>(strips.size()); ++part)
+            drawStrip(g, strips[static_cast<size_t>(part)], part);
+    }
+
+    void mouseDown(const juce::MouseEvent& event) override
+    {
+        dragMode = DragMode::None;
+        handleGesture(event.position, true);
+    }
+
+    void mouseDrag(const juce::MouseEvent& event) override
+    {
+        handleGesture(event.position, false);
+    }
+
+    void mouseUp(const juce::MouseEvent&) override
+    {
+        dragMode = DragMode::None;
+        activePart = -1;
+    }
+
+private:
+    enum class DragMode
+    {
+        None,
+        Level,
+        Pan
+    };
+
+    std::array<juce::Rectangle<float>, ChimeraEngineAudioProcessor::getPartCount()> stripBounds() const
+    {
+        std::array<juce::Rectangle<float>, ChimeraEngineAudioProcessor::getPartCount()> strips {};
+        auto area = getLocalBounds().toFloat().reduced(10.0f, 8.0f);
+        const auto gap = 7.0f;
+        const auto width = (area.getWidth() - gap * (static_cast<float>(strips.size()) - 1.0f))
+            / static_cast<float>(strips.size());
+
+        for (auto& strip : strips)
+        {
+            strip = area.removeFromLeft(width);
+            area.removeFromLeft(gap);
+        }
+
+        return strips;
+    }
+
+    juce::Rectangle<float> levelArea(juce::Rectangle<float> strip) const
+    {
+        strip.reduce(5.0f, 0.0f);
+        strip.removeFromTop(30.0f);
+        strip.removeFromBottom(30.0f);
+        return strip;
+    }
+
+    juce::Rectangle<float> panArea(juce::Rectangle<float> strip) const
+    {
+        return strip.reduced(5.0f, 0.0f).removeFromBottom(24.0f);
+    }
+
+    juce::Rectangle<float> ledArea(juce::Rectangle<float> strip) const
+    {
+        return strip.removeFromTop(28.0f).withSizeKeepingCentre(16.0f, 16.0f);
+    }
+
+    void drawStrip(juce::Graphics& g, juce::Rectangle<float> strip, int part)
+    {
+        const auto enabled = owner.isPartEnabled(part);
+        const auto level = std::clamp(owner.getPartLevel(part) / 1.5f, 0.0f, 1.0f);
+        const auto pan = std::clamp(owner.getPartPan(part), -1.0f, 1.0f);
+        const auto selected = part == activePart;
+
+        juce::ColourGradient stripFill(selected ? juce::Colour(0xff29313b) : juce::Colour(0xff1c222a),
+                                       strip.getX(), strip.getY(),
+                                       juce::Colour(0xff0b0e13), strip.getX(), strip.getBottom(), false);
+        stripFill.addColour(0.34, juce::Colour(0xff151b22));
+        g.setGradientFill(stripFill);
+        g.fillRoundedRectangle(strip, 4.0f);
+        g.setColour(selected ? accent().withAlpha(0.8f) : juce::Colour(0xff313a44));
+        g.drawRoundedRectangle(strip.reduced(0.5f), 4.0f, selected ? 1.3f : 0.8f);
+
+        auto top = strip.removeFromTop(28.0f);
+        const auto led = top.removeFromLeft(18.0f).withSizeKeepingCentre(9.0f, 9.0f);
+        g.setColour(juce::Colour(0xff030405));
+        g.fillEllipse(led.expanded(2.0f));
+        g.setColour(enabled ? accent() : juce::Colour(0xff303741));
+        g.fillEllipse(led);
+        g.setColour(enabled ? accent().brighter(0.45f) : juce::Colour(0xff58616b));
+        g.drawEllipse(led, 0.9f);
+
+        g.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+        g.setColour(enabled ? juce::Colour(0xffecfdf5) : juce::Colour(0xff6f7b87));
+        g.drawText(juce::String(part + 1).paddedLeft('0', 2), top, juce::Justification::centredRight);
+
+        auto meter = strip.reduced(6.0f, 0.0f);
+        meter.removeFromBottom(34.0f);
+        auto track = meter.withWidth(9.0f).withCentre({ meter.getCentreX(), meter.getCentreY() });
+        g.setColour(juce::Colour(0xff050608));
+        g.fillRoundedRectangle(track.expanded(3.0f, 2.0f), 5.0f);
+        g.setColour(juce::Colour(0xff252e38));
+        g.fillRoundedRectangle(track, 4.5f);
+
+        const auto fill = track.withTop(track.getBottom() - track.getHeight() * level);
+        juce::ColourGradient meterFill(accent(), fill.getX(), fill.getBottom(), amber(), fill.getX(), fill.getY(), false);
+        g.setGradientFill(meterFill);
+        g.fillRoundedRectangle(fill, 4.5f);
+
+        const auto capY = track.getBottom() - track.getHeight() * level;
+        auto cap = juce::Rectangle<float>(track.getCentreX() - 17.0f, capY - 7.0f, 34.0f, 14.0f);
+        juce::ColourGradient capFill(juce::Colour(0xffe5ebf2), cap.getX(), cap.getY(),
+                                     juce::Colour(0xff707b86), cap.getX(), cap.getBottom(), false);
+        g.setGradientFill(capFill);
+        g.fillRoundedRectangle(cap, 3.0f);
+        g.setColour(juce::Colour(0xff11161c));
+        g.drawRoundedRectangle(cap, 3.0f, 1.0f);
+        g.setColour(juce::Colour(0xffffffff).withAlpha(0.28f));
+        g.drawLine(cap.getX() + 4.0f, cap.getY() + 3.0f, cap.getRight() - 4.0f, cap.getY() + 3.0f);
+
+        auto panRail = strip.reduced(6.0f, 0.0f).removeFromBottom(24.0f);
+        auto rail = panRail.withHeight(5.0f).withCentre({ panRail.getCentreX(), panRail.getCentreY() - 2.0f });
+        g.setColour(juce::Colour(0xff050608));
+        g.fillRoundedRectangle(rail.expanded(1.5f, 2.0f), 3.0f);
+        g.setColour(juce::Colour(0xff343d47));
+        g.fillRoundedRectangle(rail, 2.5f);
+        g.setColour(juce::Colour(0xff627080));
+        g.drawLine(rail.getCentreX(), rail.getY() - 3.0f, rail.getCentreX(), rail.getBottom() + 3.0f, 1.0f);
+
+        const auto panX = juce::jmap(pan, -1.0f, 1.0f, rail.getX(), rail.getRight());
+        auto panCap = juce::Rectangle<float>(panX - 5.0f, rail.getCentreY() - 7.0f, 10.0f, 14.0f);
+        g.setColour(enabled ? accent() : juce::Colour(0xff697380));
+        g.fillRoundedRectangle(panCap, 2.5f);
+        g.setColour(juce::Colour(0xff0a0d11));
+        g.drawRoundedRectangle(panCap, 2.5f, 0.8f);
+    }
+
+    void handleGesture(juce::Point<float> position, bool beginGesture)
+    {
+        const auto strips = stripBounds();
+        for (int part = 0; part < static_cast<int>(strips.size()); ++part)
+        {
+            const auto strip = strips[static_cast<size_t>(part)];
+            if (!strip.contains(position) && !(part == activePart && dragMode != DragMode::None))
+                continue;
+
+            if (beginGesture)
+            {
+                activePart = part;
+                if (ledArea(strip).expanded(7.0f).contains(position))
+                {
+                    owner.setPartMix(part, owner.getPartLevel(part), owner.getPartPan(part), !owner.isPartEnabled(part));
+                    repaint();
+                    return;
+                }
+
+                dragMode = panArea(strip).expanded(0.0f, 8.0f).contains(position) ? DragMode::Pan : DragMode::Level;
+            }
+
+            if (dragMode == DragMode::Pan)
+            {
+                const auto rail = panArea(strip).reduced(4.0f, 0.0f);
+                const auto pan = juce::jlimit(-1.0f, 1.0f,
+                                              juce::jmap(position.x, rail.getX(), rail.getRight(), -1.0f, 1.0f));
+                owner.setPartMix(part, owner.getPartLevel(part), pan, owner.isPartEnabled(part));
+            }
+            else if (dragMode == DragMode::Level)
+            {
+                const auto track = levelArea(strip);
+                const auto yNorm = std::clamp((position.y - track.getY()) / std::max(1.0f, track.getHeight()), 0.0f, 1.0f);
+                owner.setPartMix(part, (1.0f - yNorm) * 1.5f, owner.getPartPan(part), owner.isPartEnabled(part));
+            }
+
+            repaint();
+            return;
+        }
+    }
+
+    ChimeraEngineAudioProcessor& owner;
+    DragMode dragMode = DragMode::None;
+    int activePart = -1;
+};
+
 ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngineAudioProcessor& p)
     : AudioProcessorEditor(&p), owner(p)
 {
@@ -552,6 +748,8 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     addPageSurfaceControls();
     graphicalEditor = std::make_unique<GraphicalEditor>(owner);
     addAndMakeVisible(*graphicalEditor);
+    mixerEditor = std::make_unique<MixerEditor>(owner);
+    addAndMakeVisible(*mixerEditor);
 
     for (const auto& text : {
              "SEQ -> SCENE -> 4 ARP LANES",
@@ -609,8 +807,7 @@ void ChimeraEngineAudioProcessorEditor::paint(juce::Graphics& g)
     drawPanel(g, PanelId::Header, {});
     drawPanel(g, PanelId::Display, "LCD");
     drawPanel(g, PanelId::Modes, "Modes");
-    drawPanel(g, PanelId::Tone, "Tone");
-    drawPanel(g, PanelId::Envelope, "Amplitude");
+    drawPanel(g, PanelId::Tone, "Macro Controls");
     drawPanel(g, PanelId::Effects, "Effects");
     drawPanel(g, PanelId::Performance, "Arpeggiator");
     drawPanel(g, PanelId::Presets, "Voice Select");
@@ -638,23 +835,21 @@ void ChimeraEngineAudioProcessorEditor::resized()
     presetBounds = upper;
 
     area.removeFromTop(14);
-    auto middle = area.removeFromTop(470);
-    auto leftColumn = middle.removeFromLeft(370);
-    middle.removeFromLeft(18);
+    toneBounds = area.removeFromTop(170);
+    envelopeBounds = {};
+
+    area.removeFromTop(14);
+    auto middle = area.removeFromTop(360);
     auto rightColumn = middle.removeFromRight(370);
     middle.removeFromRight(18);
     elementMonitorBounds = middle;
 
-    toneBounds = leftColumn.removeFromTop(245);
-    leftColumn.removeFromTop(16);
-    envelopeBounds = leftColumn;
-
-    effectsBounds = rightColumn.removeFromTop(330);
-    rightColumn.removeFromTop(16);
+    effectsBounds = rightColumn.removeFromTop(238);
+    rightColumn.removeFromTop(14);
     performanceBounds = rightColumn;
 
     area.removeFromTop(14);
-    mixerBounds = area.removeFromTop(112);
+    mixerBounds = area.removeFromTop(150);
     area.removeFromTop(12);
     keyboard.setBounds(area.reduced(8, 8));
 
@@ -698,49 +893,44 @@ void ChimeraEngineAudioProcessorEditor::resized()
                                     presetButtonHeight);
     }
 
-    auto toneArea = toneBounds.reduced(24, 42);
-    fitRow({ sliders[0], sliders[1], sliders[2] }, toneArea.removeFromTop(158), 18);
-
-    auto ampArea = envelopeBounds.reduced(24, 42);
-    fitRow({ sliders[3], sliders[4] }, ampArea.removeFromTop(150), 22);
+    auto toneArea = toneBounds.reduced(28, 36);
+    fitRow({ sliders[0], sliders[1], sliders[2], sliders[3], sliders[4], sliders[5], sliders[6] },
+           toneArea.removeFromTop(124),
+           18);
 
     auto fxArea = effectsBounds.reduced(20, 40);
-    sliders[5]->setBounds(fxArea.removeFromLeft(112).removeFromTop(158));
-    fxArea.removeFromLeft(16);
-    auto insertGrid = fxArea.removeFromTop(108);
+    auto insertGrid = fxArea.removeFromTop(92);
     const auto insertWidth = (insertGrid.getWidth() - 8) / 2;
     for (int i = 0; i < fxInsertBoxes.size(); ++i)
     {
         const auto row = i / 2;
         const auto column = i % 2;
-            fxInsertBoxes[i]->setBounds(insertGrid.getX() + column * (insertWidth + 8),
-                                    insertGrid.getY() + row * 25,
+        fxInsertBoxes[i]->setBounds(insertGrid.getX() + column * (insertWidth + 8),
+                                    insertGrid.getY() + row * 23,
                                     insertWidth,
-                                    22);
-    }
-    fxArea.removeFromTop(7);
-    for (int i = 0; i < fxSendSliders.size(); ++i)
-    {
-        fxSendSliders[i]->setBounds(fxArea.removeFromTop(24));
-        fxArea.removeFromTop(4);
+                                    20);
     }
     fxArea.removeFromTop(6);
-    auto masterGrid = fxArea.removeFromTop(78);
-    const auto masterWidth = (masterGrid.getWidth() - 8) / 2;
+    for (int i = 0; i < fxSendSliders.size(); ++i)
+    {
+        fxSendSliders[i]->setBounds(fxArea.removeFromTop(22));
+        fxArea.removeFromTop(3);
+    }
+    fxArea.removeFromTop(4);
+    auto masterGrid = fxArea.removeFromTop(48);
+    const auto masterWidth = (masterGrid.getWidth() - 12) / 3;
     for (int i = 0; i < masterFxSliders.size(); ++i)
     {
-        const auto row = i / 2;
-        const auto column = i % 2;
-        masterFxSliders[i]->setBounds(masterGrid.getX() + column * (masterWidth + 8),
-                                      masterGrid.getY() + row * 26,
+        const auto row = i / 3;
+        const auto column = i % 3;
+        masterFxSliders[i]->setBounds(masterGrid.getX() + column * (masterWidth + 6),
+                                      masterGrid.getY() + row * 24,
                                       masterWidth,
-                                      22);
+                                      20);
     }
 
     auto arpArea = performanceBounds.reduced(20, 38);
-    sliders[6]->setBounds(arpArea.removeFromLeft(96).removeFromTop(86));
-    arpArea.removeFromLeft(14);
-    arpToggle.setBounds(arpArea.removeFromTop(28));
+    arpToggle.setBounds(arpArea.removeFromTop(28).removeFromLeft(145));
     arpArea.removeFromTop(8);
     fitRow({ &demoSequenceButton, &sequencerPlayButton, &sequencerResetButton, &mpeToggle }, arpArea.removeFromTop(30), 7);
     arpArea.removeFromTop(6);
@@ -755,7 +945,7 @@ void ChimeraEngineAudioProcessorEditor::resized()
     }
 
     auto pageArea = elementMonitorBounds.reduced(20, 40);
-    graphicalEditor->setBounds(pageArea.removeFromTop(282).toNearestInt());
+    graphicalEditor->setBounds(pageArea.removeFromTop(248).toNearestInt());
     pageArea.removeFromTop(12);
     for (int i = 0; i < pageLabels.size(); ++i)
     {
@@ -783,22 +973,14 @@ void ChimeraEngineAudioProcessorEditor::resized()
                                         36);
     }
 
-    auto mixer = mixerBounds.reduced(16, 24);
-    const auto stripGap = 8;
-    const auto stripWidth = (mixer.getWidth() - stripGap * (ChimeraEngineAudioProcessor::getPartCount() - 1))
-        / ChimeraEngineAudioProcessor::getPartCount();
+    if (mixerEditor != nullptr)
+        mixerEditor->setBounds(mixerBounds.reduced(14, 28));
+
     for (int part = 0; part < ChimeraEngineAudioProcessor::getPartCount(); ++part)
     {
-        auto strip = mixer.removeFromLeft(stripWidth);
-        auto* enable = partEnableButtons[part];
-        auto* level = partLevelSliders[part];
-        auto* pan = partPanSliders[part];
-        enable->setBounds(strip.removeFromTop(20));
-        strip.removeFromTop(3);
-        level->setBounds(strip.removeFromTop(48).reduced(2, 0));
-        strip.removeFromTop(3);
-        pan->setBounds(strip.removeFromTop(16));
-        mixer.removeFromLeft(stripGap);
+        partEnableButtons[part]->setVisible(false);
+        partLevelSliders[part]->setVisible(false);
+        partPanSliders[part]->setVisible(false);
     }
 }
 
@@ -1594,4 +1776,6 @@ void ChimeraEngineAudioProcessorEditor::timerCallback()
     refreshTransportControls();
     if (graphicalEditor != nullptr)
         graphicalEditor->repaint();
+    if (mixerEditor != nullptr)
+        mixerEditor->repaint();
 }

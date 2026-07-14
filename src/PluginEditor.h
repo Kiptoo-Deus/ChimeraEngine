@@ -33,6 +33,7 @@ public:
 
 private:
     class GraphicalEditor;
+    class MixerEditor;
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
@@ -107,6 +108,7 @@ private:
     juce::ToggleButton mpeToggle { "MPE" };
     juce::Label sequencerTickLabel;
     std::unique_ptr<GraphicalEditor> graphicalEditor;
+    std::unique_ptr<MixerEditor> mixerEditor;
 
     juce::Rectangle<int> headerBounds;
     juce::Rectangle<int> displayBounds;
