@@ -93,6 +93,16 @@ int main()
     assert(presetProcessor.loadSynthPreset("Velocity Split").wasOk());
     assert(presetProcessor.getCurrentPatchName() == "Velocity Split");
 
+    ChimeraEngineAudioProcessor lfoPanProcessor;
+    lfoPanProcessor.prepareToPlay(48000.0, 512);
+    lfoPanProcessor.getParameters().getParameter("fxMix")->setValueNotifyingHost(0.0f);
+    assert(lfoPanProcessor.loadSynthPreset("LFO Pan").wasOk());
+    juce::MidiBuffer lfoPanMidi;
+    lfoPanMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    const auto [lfoPanLeft, lfoPanRight] = renderAndChannelSums(lfoPanProcessor, lfoPanMidi, 512);
+    assert(lfoPanLeft > 0.01f && lfoPanRight > 0.01f);
+    assert(std::abs(lfoPanLeft - lfoPanRight) > 0.001f);
+
     juce::MidiBuffer lowVelocityMidi;
     lowVelocityMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(40)), 0);
     const auto lowVelocitySum = renderAndSum(presetProcessor, lowVelocityMidi, 512);

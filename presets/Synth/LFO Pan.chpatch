@@ -1,0 +1,25 @@
+{
+  "format": "chpatch",
+  "version": 1,
+  "name": "LFO Pan",
+  "category": "Synth",
+  "elements": [
+    {
+      "sample": "samples/Synth/sine_C4_24bit.wav",
+      "rootKey": 60,
+      "keyRange": [0, 127],
+      "velocityRange": [1, 127],
+      "level": 0.9,
+      "pan": 0.0,
+      "filterType": "lowPass24",
+      "ampAttack": 0.0,
+      "ampSustain": 1.0,
+      "ampRelease": 0.05,
+      "lfo1RateHz": 4.0,
+      "lfo1CutoffDepth": 0.35,
+      "lfo2RateHz": 20.0,
+      "lfo2AmpDepth": 0.15,
+      "lfo2PanDepth": 1.0
+    }
+  ]
+}

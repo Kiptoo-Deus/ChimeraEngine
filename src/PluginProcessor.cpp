@@ -103,6 +103,10 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
     {
         for (auto& envelope : voice.ampEnvelopes)
             envelope.setSampleRate(currentSampleRate);
+        for (auto& lfo : voice.lfo1)
+            lfo.setSampleRate(currentSampleRate);
+        for (auto& lfo : voice.lfo2)
+            lfo.setSampleRate(currentSampleRate);
         for (auto& filter : voice.filters)
         {
             filter.setSampleRate(currentSampleRate);
@@ -424,6 +428,11 @@ juce::Result ChimeraEngineAudioProcessor::loadPatchFileForPart(int partIndex, co
         elements[static_cast<size_t>(count)].ampAttack = element.ampAttack;
         elements[static_cast<size_t>(count)].ampSustain = element.ampSustain;
         elements[static_cast<size_t>(count)].ampRelease = element.ampRelease;
+        elements[static_cast<size_t>(count)].lfo1RateHz = element.lfo1RateHz;
+        elements[static_cast<size_t>(count)].lfo1CutoffDepth = element.lfo1CutoffDepth;
+        elements[static_cast<size_t>(count)].lfo2RateHz = element.lfo2RateHz;
+        elements[static_cast<size_t>(count)].lfo2AmpDepth = element.lfo2AmpDepth;
+        elements[static_cast<size_t>(count)].lfo2PanDepth = element.lfo2PanDepth;
         ++count;
     }
 
@@ -609,6 +618,10 @@ void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int partIndex,
         filter.setSampleRate(currentSampleRate);
         filter.reset();
     }
+    for (auto& lfo : target.lfo1)
+        lfo.setSampleRate(currentSampleRate);
+    for (auto& lfo : target.lfo2)
+        lfo.setSampleRate(currentSampleRate);
     target.elementCount = 0;
 
     for (int i = 0; i < part.loadedElementCount; ++i)
@@ -623,6 +636,13 @@ void ChimeraEngineAudioProcessor::startVoice(ActiveVoice& target, int partIndex,
         target.elementLevels[playerIndex] = element.level;
         target.elementPans[playerIndex] = element.pan;
         target.elementFilterModes[playerIndex] = element.filterMode;
+        target.lfo1CutoffDepths[playerIndex] = element.lfo1CutoffDepth;
+        target.lfo2AmpDepths[playerIndex] = element.lfo2AmpDepth;
+        target.lfo2PanDepths[playerIndex] = element.lfo2PanDepth;
+        target.lfo1[playerIndex].setFrequency(element.lfo1RateHz);
+        target.lfo1[playerIndex].reset();
+        target.lfo2[playerIndex].setFrequency(element.lfo2RateHz);
+        target.lfo2[playerIndex].reset();
         target.filters[playerIndex].setMode(element.filterMode);
         target.ampEnvelopes[playerIndex].setStages(*parameters.getRawParameterValue("attack") + element.ampAttack,
                                                    0.05f,
@@ -727,16 +747,22 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
 
             auto& filter = voice.filters[static_cast<size_t>(i)];
             filter.setMode(voice.elementFilterModes[static_cast<size_t>(i)]);
-            filter.setCutoff(*parameters.getRawParameterValue("cutoff"));
+            const auto lfo1 = voice.lfo1[static_cast<size_t>(i)].process();
+            const auto lfo2 = voice.lfo2[static_cast<size_t>(i)].process();
+            const auto cutoffMod = std::pow(2.0f, lfo1 * voice.lfo1CutoffDepths[static_cast<size_t>(i)] * 2.0f);
+            filter.setCutoff(std::clamp(*parameters.getRawParameterValue("cutoff") * cutoffMod, 20.0f, 20000.0f));
             filter.setResonance(*parameters.getRawParameterValue("resonance"));
 
             auto& player = voice.players[static_cast<size_t>(i)];
             const auto filtered = filter.process(player.process());
-            const auto [leftPan, rightPan] = panGains(voice.elementPans[static_cast<size_t>(i)] + voice.partPan);
+            const auto lfoAmp = std::clamp(1.0f + lfo2 * voice.lfo2AmpDepths[static_cast<size_t>(i)], 0.0f, 2.0f);
+            const auto lfoPan = lfo2 * voice.lfo2PanDepths[static_cast<size_t>(i)];
+            const auto [leftPan, rightPan] = panGains(voice.elementPans[static_cast<size_t>(i)] + voice.partPan + lfoPan);
             const auto element = filtered
                 * voice.elementLevels[static_cast<size_t>(i)]
                 * voice.partLevel
                 * amp
+                * lfoAmp
                 * voice.velocityGain
                 * gain;
 

@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "dsp/Envelope.h"
 #include "dsp/Filter.h"
+#include "dsp/Lfo.h"
 #include "dsp/SamplePlayer.h"
 #include "dsp/SampleZone.h"
 #include "engine/Arpeggiator.h"
@@ -74,6 +75,11 @@ private:
         float ampAttack = 0.0f;
         float ampSustain = 1.0f;
         float ampRelease = 0.0f;
+        float lfo1RateHz = 0.0f;
+        float lfo1CutoffDepth = 0.0f;
+        float lfo2RateHz = 0.0f;
+        float lfo2AmpDepth = 0.0f;
+        float lfo2PanDepth = 0.0f;
     };
 
     struct ActiveVoice
@@ -81,9 +87,14 @@ private:
         std::array<chimera::dsp::SamplePlayer, 8> players;
         std::array<chimera::dsp::Filter, 8> filters;
         std::array<chimera::dsp::Envelope, 8> ampEnvelopes;
+        std::array<chimera::dsp::Lfo, 8> lfo1;
+        std::array<chimera::dsp::Lfo, 8> lfo2;
         std::array<float, 8> elementLevels {};
         std::array<float, 8> elementPans {};
         std::array<chimera::dsp::FilterMode, 8> elementFilterModes {};
+        std::array<float, 8> lfo1CutoffDepths {};
+        std::array<float, 8> lfo2AmpDepths {};
+        std::array<float, 8> lfo2PanDepths {};
         int elementCount = 0;
         int partIndex = 0;
         int note = -1;

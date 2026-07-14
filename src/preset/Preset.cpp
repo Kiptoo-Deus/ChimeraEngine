@@ -69,6 +69,11 @@ juce::Result loadPatch(const juce::File& file, Patch& patch)
         element.ampAttack = static_cast<float>(elementVar.getProperty("ampAttack", 0.0));
         element.ampSustain = static_cast<float>(elementVar.getProperty("ampSustain", 1.0));
         element.ampRelease = static_cast<float>(elementVar.getProperty("ampRelease", 0.0));
+        element.lfo1RateHz = static_cast<float>(elementVar.getProperty("lfo1RateHz", 0.0));
+        element.lfo1CutoffDepth = static_cast<float>(elementVar.getProperty("lfo1CutoffDepth", 0.0));
+        element.lfo2RateHz = static_cast<float>(elementVar.getProperty("lfo2RateHz", 0.0));
+        element.lfo2AmpDepth = static_cast<float>(elementVar.getProperty("lfo2AmpDepth", 0.0));
+        element.lfo2PanDepth = static_cast<float>(elementVar.getProperty("lfo2PanDepth", 0.0));
 
         if (element.samplePath.isEmpty())
             return juce::Result::fail("Patch element requires sample path: " + file.getFullPathName());
@@ -80,7 +85,12 @@ juce::Result loadPatch(const juce::File& file, Patch& patch)
             || element.tuningCents < -1200.0f || element.tuningCents > 1200.0f
             || element.ampAttack < 0.0f || element.ampAttack > 10.0f
             || element.ampSustain < 0.0f || element.ampSustain > 1.0f
-            || element.ampRelease < 0.0f || element.ampRelease > 20.0f)
+            || element.ampRelease < 0.0f || element.ampRelease > 20.0f
+            || element.lfo1RateHz < 0.0f || element.lfo1RateHz > 40.0f
+            || element.lfo1CutoffDepth < 0.0f || element.lfo1CutoffDepth > 1.0f
+            || element.lfo2RateHz < 0.0f || element.lfo2RateHz > 40.0f
+            || element.lfo2AmpDepth < 0.0f || element.lfo2AmpDepth > 1.0f
+            || element.lfo2PanDepth < 0.0f || element.lfo2PanDepth > 1.0f)
             return juce::Result::fail("Patch element MIDI ranges are invalid: " + file.getFullPathName());
 
         next.elements.push_back(element);

@@ -98,6 +98,16 @@ def validate_patch(path: pathlib.Path) -> list[str]:
         if not isinstance(amp_release, (int, float)) or amp_release < 0.0 or amp_release > 20.0:
             errors.append(f"{path}: element {index} ampRelease must be between 0.0 and 20.0")
 
+        for key in ("lfo1RateHz", "lfo2RateHz"):
+            value = element.get(key, 0.0)
+            if not isinstance(value, (int, float)) or value < 0.0 or value > 40.0:
+                errors.append(f"{path}: element {index} {key} must be between 0.0 and 40.0")
+
+        for key in ("lfo1CutoffDepth", "lfo2AmpDepth", "lfo2PanDepth"):
+            value = element.get(key, 0.0)
+            if not isinstance(value, (int, float)) or value < 0.0 or value > 1.0:
+                errors.append(f"{path}: element {index} {key} must be between 0.0 and 1.0")
+
     return errors
 
 

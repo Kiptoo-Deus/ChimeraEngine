@@ -20,6 +20,11 @@ struct ElementDefinition
     float ampAttack = 0.0f;
     float ampSustain = 1.0f;
     float ampRelease = 0.0f;
+    float lfo1RateHz = 0.0f;
+    float lfo1CutoffDepth = 0.0f;
+    float lfo2RateHz = 0.0f;
+    float lfo2AmpDepth = 0.0f;
+    float lfo2PanDepth = 0.0f;
 };
 
 struct PresetMetadata
