@@ -41,6 +41,8 @@ private:
     juce::Label& addPanelLabel(const juce::String& text, juce::Justification justification = juce::Justification::centredLeft);
     void addPartMixerControls();
     void refreshPartMixerControls();
+    void addFxControls();
+    void refreshFxControls();
     void drawPanel(juce::Graphics& g, PanelId panel, const juce::String& title);
     void updateDisplay();
     void handleNoteOn(juce::MidiKeyboardState*, int midiChannel, int midiNoteNumber, float velocity) override;
@@ -63,6 +65,8 @@ private:
     juce::OwnedArray<juce::ToggleButton> partEnableButtons;
     juce::OwnedArray<juce::Slider> partLevelSliders;
     juce::OwnedArray<juce::Slider> partPanSliders;
+    juce::OwnedArray<juce::ComboBox> fxInsertBoxes;
+    juce::OwnedArray<juce::Slider> fxSendSliders;
     juce::OwnedArray<SliderAttachment> sliderAttachments;
     juce::OwnedArray<ButtonAttachment> buttonAttachments;
     juce::ToggleButton arpToggle;

@@ -11,6 +11,41 @@ juce::Colour panelLine() { return juce::Colour(0xff38414b); }
 juce::Colour accent() { return juce::Colour(0xff2dd4bf); }
 juce::Colour amber() { return juce::Colour(0xfff2b84b); }
 
+juce::String effectName(chimera::fx::EffectType type)
+{
+    switch (type)
+    {
+        case chimera::fx::EffectType::None: return "None";
+        case chimera::fx::EffectType::Distortion: return "Distortion";
+        case chimera::fx::EffectType::Compressor: return "Compressor";
+        case chimera::fx::EffectType::ThreeBandEq: return "3-Band EQ";
+        case chimera::fx::EffectType::Delay: return "Delay";
+        case chimera::fx::EffectType::Chorus: return "Chorus";
+        case chimera::fx::EffectType::Phaser: return "Phaser";
+        case chimera::fx::EffectType::Limiter: return "Limiter";
+        case chimera::fx::EffectType::AmpUsCombo: return "US Combo";
+        case chimera::fx::EffectType::AmpJazzCombo: return "Jazz Combo";
+        case chimera::fx::EffectType::AmpUsHighGain: return "US High Gain";
+        case chimera::fx::EffectType::AmpBritishLead: return "British Lead";
+        case chimera::fx::EffectType::AmpBritishCombo: return "British Combo";
+        case chimera::fx::EffectType::AmpBritishLegend: return "British Legend";
+        case chimera::fx::EffectType::MultiEffect: return "Multi FX";
+        case chimera::fx::EffectType::SmallStereo: return "Small Stereo";
+    }
+
+    return "None";
+}
+
+int effectComboId(chimera::fx::EffectType type)
+{
+    return static_cast<int>(type) + 1;
+}
+
+chimera::fx::EffectType effectFromComboId(int id)
+{
+    return static_cast<chimera::fx::EffectType>(std::clamp(id - 1, 0, chimera::fx::effectTypeCount - 1));
+}
+
 void fitRow(std::initializer_list<juce::Component*> components, juce::Rectangle<int> area, int gap = 12)
 {
     if (components.size() == 0)
@@ -80,6 +115,8 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     arpToggle.setButtonText("ARP ON");
     addAndMakeVisible(arpToggle);
     buttonAttachments.add(new ButtonAttachment(owner.getParameters(), "arpEnabled", arpToggle));
+
+    addFxControls();
 
     for (const auto& preset : { "Sine", "Saw", "Square", "Triangle", "Stack", "Velocity Split" })
         ignoreUnused(addPresetButton(*this, preset));
@@ -153,7 +190,7 @@ void ChimeraEngineAudioProcessorEditor::resized()
     middle.removeFromLeft(12);
     envelopeBounds = middle.removeFromLeft(220);
     middle.removeFromLeft(12);
-    effectsBounds = middle.removeFromLeft(160);
+    effectsBounds = middle.removeFromLeft(240);
     middle.removeFromLeft(12);
     performanceBounds = middle.removeFromLeft(170);
     middle.removeFromLeft(12);
@@ -196,7 +233,18 @@ void ChimeraEngineAudioProcessorEditor::resized()
     fitRow({ sliders[3], sliders[4] }, ampArea.removeFromTop(150), 12);
 
     auto fxArea = effectsBounds.reduced(18, 38);
-    sliders[5]->setBounds(fxArea.removeFromTop(150).withWidth(116));
+    sliders[5]->setBounds(fxArea.removeFromLeft(104).removeFromTop(150));
+    fxArea.removeFromLeft(10);
+    for (int i = 0; i < fxInsertBoxes.size(); ++i)
+    {
+        fxInsertBoxes[i]->setBounds(fxArea.removeFromTop(28));
+        fxArea.removeFromTop(6);
+    }
+    for (int i = 0; i < fxSendSliders.size(); ++i)
+    {
+        fxSendSliders[i]->setBounds(fxArea.removeFromTop(26));
+        fxArea.removeFromTop(6);
+    }
 
     auto arpArea = performanceBounds.reduced(18, 38);
     sliders[6]->setBounds(arpArea.removeFromTop(124).withWidth(116));
@@ -346,6 +394,65 @@ void ChimeraEngineAudioProcessorEditor::refreshPartMixerControls()
     }
 }
 
+void ChimeraEngineAudioProcessorEditor::addFxControls()
+{
+    for (int slot = 0; slot < 2; ++slot)
+    {
+        auto* box = fxInsertBoxes.add(new juce::ComboBox());
+        for (int type = 0; type < chimera::fx::effectTypeCount; ++type)
+            box->addItem("I" + juce::String(slot + 1) + " " + effectName(static_cast<chimera::fx::EffectType>(type)),
+                         effectComboId(static_cast<chimera::fx::EffectType>(type)));
+        box->setSelectedId(effectComboId(owner.getInsertEffect(slot)), juce::dontSendNotification);
+        box->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff0d1117));
+        box->setColour(juce::ComboBox::textColourId, juce::Colour(0xffe5eef7));
+        box->setColour(juce::ComboBox::outlineColourId, panelLine());
+        box->onChange = [this, slot]
+        {
+            owner.setInsertEffect(slot, effectFromComboId(fxInsertBoxes[slot]->getSelectedId()));
+            lcdLine.setText("Insert " + juce::String(slot + 1) + ": " + effectName(owner.getInsertEffect(slot)),
+                            juce::dontSendNotification);
+        };
+        addAndMakeVisible(box);
+    }
+
+    for (const auto name : { "Chorus", "Reverb" })
+    {
+        auto* slider = fxSendSliders.add(new juce::Slider(juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight));
+        slider->setName(name);
+        slider->setRange(0.0, 1.0, 0.01);
+        slider->setTextBoxStyle(juce::Slider::TextBoxRight, false, 46, 18);
+        slider->setColour(juce::Slider::trackColourId, accent());
+        slider->setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+        addAndMakeVisible(slider);
+    }
+
+    fxSendSliders[0]->setValue(owner.getChorusSend(), juce::dontSendNotification);
+    fxSendSliders[1]->setValue(owner.getReverbSend(), juce::dontSendNotification);
+    fxSendSliders[0]->onValueChange = [this]
+    {
+        owner.setSystemFxSends(static_cast<float>(fxSendSliders[0]->getValue()), owner.getReverbSend());
+    };
+    fxSendSliders[1]->onValueChange = [this]
+    {
+        owner.setSystemFxSends(owner.getChorusSend(), static_cast<float>(fxSendSliders[1]->getValue()));
+    };
+}
+
+void ChimeraEngineAudioProcessorEditor::refreshFxControls()
+{
+    for (int slot = 0; slot < fxInsertBoxes.size(); ++slot)
+    {
+        const auto id = effectComboId(owner.getInsertEffect(slot));
+        if (fxInsertBoxes[slot]->getSelectedId() != id)
+            fxInsertBoxes[slot]->setSelectedId(id, juce::dontSendNotification);
+    }
+
+    if (std::abs(static_cast<float>(fxSendSliders[0]->getValue()) - owner.getChorusSend()) > 0.001f)
+        fxSendSliders[0]->setValue(owner.getChorusSend(), juce::dontSendNotification);
+    if (std::abs(static_cast<float>(fxSendSliders[1]->getValue()) - owner.getReverbSend()) > 0.001f)
+        fxSendSliders[1]->setValue(owner.getReverbSend(), juce::dontSendNotification);
+}
+
 void ChimeraEngineAudioProcessorEditor::drawPanel(juce::Graphics& g, PanelId panel, const juce::String& panelTitle)
 {
     const auto bounds = [this, panel]
@@ -409,4 +516,5 @@ void ChimeraEngineAudioProcessorEditor::timerCallback()
 {
     updateDisplay();
     refreshPartMixerControls();
+    refreshFxControls();
 }
