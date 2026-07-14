@@ -149,6 +149,22 @@ int main()
     multiPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
     assert(renderAndSum(multiPartProcessor, multiPartMidi, 512) > 0.01f);
 
+    ChimeraEngineAudioProcessor partMixProcessor;
+    partMixProcessor.prepareToPlay(48000.0, 512);
+    partMixProcessor.setPartMix(1, 1.0f, -1.0f, true);
+    juce::MidiBuffer pannedPartMidi;
+    pannedPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
+    const auto [partMixLeft, partMixRight] = renderAndChannelSums(partMixProcessor, pannedPartMidi, 512);
+    assert(partMixLeft > 0.01f);
+    assert(partMixRight < partMixLeft * 0.2f);
+
+    ChimeraEngineAudioProcessor disabledPartProcessor;
+    disabledPartProcessor.prepareToPlay(48000.0, 512);
+    disabledPartProcessor.setPartMix(1, 1.0f, 0.0f, false);
+    juce::MidiBuffer disabledPartMidi;
+    disabledPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
+    assert(renderAndSum(disabledPartProcessor, disabledPartMidi, 512) == 0.0f);
+
     ChimeraEngineAudioProcessor performanceProcessor;
     performanceProcessor.prepareToPlay(48000.0, 512);
     assert(performanceProcessor.loadSynthPresetForPart(0, "Stack").wasOk());
@@ -179,6 +195,7 @@ int main()
     ChimeraEngineAudioProcessor stateSourceProcessor;
     stateSourceProcessor.prepareToPlay(48000.0, 512);
     assert(stateSourceProcessor.loadSynthPresetForPart(1, "Stack").wasOk());
+    stateSourceProcessor.setPartMix(1, 0.5f, -0.75f, true);
     stateSourceProcessor.setPerformancePart(0, { 0, 127, 1, 127, 2, true, 1, 1.0f, 0.0f, "Restored Part" });
     stateSourceProcessor.setPerformanceModeEnabled(true);
     juce::MemoryBlock stateData;
@@ -189,6 +206,9 @@ int main()
     restoredStateProcessor.setStateInformation(stateData.getData(), static_cast<int>(stateData.getSize()));
     assert(restoredStateProcessor.isPerformanceModeEnabled());
     assert(restoredStateProcessor.getPartPatchName(1) == "Stack");
+    assert(std::abs(restoredStateProcessor.getPartLevel(1) - 0.5f) < 0.001f);
+    assert(std::abs(restoredStateProcessor.getPartPan(1) + 0.75f) < 0.001f);
+    assert(restoredStateProcessor.isPartEnabled(1));
     juce::MidiBuffer restoredPartMidi;
     restoredPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
     assert(renderAndSum(restoredStateProcessor, restoredPartMidi, 512) > 0.01f);

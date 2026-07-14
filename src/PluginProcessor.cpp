@@ -223,6 +223,14 @@ void ChimeraEngineAudioProcessor::getStateInformation(juce::MemoryBlock& destDat
             state.setProperty("chimeraPartPatch" + juce::String(part),
                               parts[static_cast<size_t>(part)].patchName,
                               nullptr);
+        for (int part = 0; part < static_cast<int>(maxParts); ++part)
+        {
+            const auto& partState = parts[static_cast<size_t>(part)];
+            const auto prefix = "chimeraPart" + juce::String(part);
+            state.setProperty(prefix + "Level", partState.level, nullptr);
+            state.setProperty(prefix + "Pan", partState.pan, nullptr);
+            state.setProperty(prefix + "Enabled", partState.enabled, nullptr);
+        }
     }
     for (int performancePart = 0; performancePart < chimera::engine::Performance::partCount; ++performancePart)
     {
@@ -249,8 +257,17 @@ void ChimeraEngineAudioProcessor::setStateInformation(const void* data, int size
     if (auto tree = juce::ValueTree::readFromData(data, static_cast<size_t>(sizeInBytes)); tree.isValid())
     {
         std::array<juce::String, maxParts> restoredPartPatches;
+        std::array<float, maxParts> restoredPartLevels;
+        std::array<float, maxParts> restoredPartPans;
+        std::array<bool, maxParts> restoredPartEnabled;
         for (int part = 0; part < static_cast<int>(maxParts); ++part)
+        {
             restoredPartPatches[static_cast<size_t>(part)] = tree.getProperty("chimeraPartPatch" + juce::String(part), {}).toString();
+            const auto prefix = "chimeraPart" + juce::String(part);
+            restoredPartLevels[static_cast<size_t>(part)] = static_cast<float>(tree.getProperty(prefix + "Level", 1.0));
+            restoredPartPans[static_cast<size_t>(part)] = static_cast<float>(tree.getProperty(prefix + "Pan", 0.0));
+            restoredPartEnabled[static_cast<size_t>(part)] = static_cast<bool>(tree.getProperty(prefix + "Enabled", true));
+        }
 
         performanceModeEnabled = static_cast<bool>(tree.getProperty("chimeraPerformanceMode", false));
         parameters.replaceState(tree);
@@ -258,6 +275,11 @@ void ChimeraEngineAudioProcessor::setStateInformation(const void* data, int size
         for (int part = 0; part < static_cast<int>(maxParts); ++part)
             if (restoredPartPatches[static_cast<size_t>(part)].isNotEmpty())
                 ignoreUnused(loadSynthPresetForPart(part, restoredPartPatches[static_cast<size_t>(part)]));
+        for (int part = 0; part < static_cast<int>(maxParts); ++part)
+            setPartMix(part,
+                       restoredPartLevels[static_cast<size_t>(part)],
+                       restoredPartPans[static_cast<size_t>(part)],
+                       restoredPartEnabled[static_cast<size_t>(part)]);
 
         for (int performancePart = 0; performancePart < chimera::engine::Performance::partCount; ++performancePart)
         {
@@ -322,6 +344,42 @@ juce::String ChimeraEngineAudioProcessor::getPartPatchName(int partIndex) const
         return {};
 
     return parts[static_cast<size_t>(partIndex)].patchName;
+}
+
+void ChimeraEngineAudioProcessor::setPartMix(int partIndex, float level, float pan, bool enabled)
+{
+    if (partIndex < 0 || partIndex >= static_cast<int>(maxParts))
+        return;
+
+    const juce::ScopedLock lock(zoneLock);
+    auto& part = parts[static_cast<size_t>(partIndex)];
+    part.level = std::clamp(level, 0.0f, 2.0f);
+    part.pan = std::clamp(pan, -1.0f, 1.0f);
+    part.enabled = enabled;
+}
+
+float ChimeraEngineAudioProcessor::getPartLevel(int partIndex) const
+{
+    if (partIndex < 0 || partIndex >= static_cast<int>(maxParts))
+        return 0.0f;
+
+    return parts[static_cast<size_t>(partIndex)].level;
+}
+
+float ChimeraEngineAudioProcessor::getPartPan(int partIndex) const
+{
+    if (partIndex < 0 || partIndex >= static_cast<int>(maxParts))
+        return 0.0f;
+
+    return parts[static_cast<size_t>(partIndex)].pan;
+}
+
+bool ChimeraEngineAudioProcessor::isPartEnabled(int partIndex) const
+{
+    if (partIndex < 0 || partIndex >= static_cast<int>(maxParts))
+        return false;
+
+    return parts[static_cast<size_t>(partIndex)].enabled;
 }
 
 void ChimeraEngineAudioProcessor::setPerformanceModeEnabled(bool shouldBeEnabled)

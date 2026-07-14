@@ -48,6 +48,10 @@ public:
     juce::Result loadSynthPresetForPart(int partIndex, const juce::String& presetName);
     juce::String getCurrentPatchName() const { return currentPatchName; }
     juce::String getPartPatchName(int partIndex) const;
+    void setPartMix(int partIndex, float level, float pan, bool enabled);
+    float getPartLevel(int partIndex) const;
+    float getPartPan(int partIndex) const;
+    bool isPartEnabled(int partIndex) const;
     void setPerformanceModeEnabled(bool shouldBeEnabled);
     bool isPerformanceModeEnabled() const { return performanceModeEnabled; }
     void setPerformancePart(int performancePartIndex, chimera::engine::PartZone zone);
