@@ -190,7 +190,7 @@ void ChimeraEngineAudioProcessorEditor::resized()
     middle.removeFromLeft(12);
     envelopeBounds = middle.removeFromLeft(220);
     middle.removeFromLeft(12);
-    effectsBounds = middle.removeFromLeft(240);
+    effectsBounds = middle.removeFromLeft(300);
     middle.removeFromLeft(12);
     performanceBounds = middle.removeFromLeft(170);
     middle.removeFromLeft(12);
@@ -235,11 +235,18 @@ void ChimeraEngineAudioProcessorEditor::resized()
     auto fxArea = effectsBounds.reduced(18, 38);
     sliders[5]->setBounds(fxArea.removeFromLeft(104).removeFromTop(150));
     fxArea.removeFromLeft(10);
+    auto insertGrid = fxArea.removeFromTop(92);
+    const auto insertWidth = (insertGrid.getWidth() - 6) / 2;
     for (int i = 0; i < fxInsertBoxes.size(); ++i)
     {
-        fxInsertBoxes[i]->setBounds(fxArea.removeFromTop(28));
-        fxArea.removeFromTop(6);
+        const auto row = i / 2;
+        const auto column = i % 2;
+        fxInsertBoxes[i]->setBounds(insertGrid.getX() + column * (insertWidth + 6),
+                                    insertGrid.getY() + row * 22,
+                                    insertWidth,
+                                    20);
     }
+    fxArea.removeFromTop(6);
     for (int i = 0; i < fxSendSliders.size(); ++i)
     {
         fxSendSliders[i]->setBounds(fxArea.removeFromTop(26));
@@ -396,7 +403,7 @@ void ChimeraEngineAudioProcessorEditor::refreshPartMixerControls()
 
 void ChimeraEngineAudioProcessorEditor::addFxControls()
 {
-    for (int slot = 0; slot < 2; ++slot)
+    for (int slot = 0; slot < chimera::fx::InsertRack::slotCount; ++slot)
     {
         auto* box = fxInsertBoxes.add(new juce::ComboBox());
         for (int type = 0; type < chimera::fx::effectTypeCount; ++type)
