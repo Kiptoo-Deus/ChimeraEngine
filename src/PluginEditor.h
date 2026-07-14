@@ -75,6 +75,7 @@ private:
     juce::TextButton demoSequenceButton { "Demo" };
     juce::TextButton sequencerPlayButton { "Play" };
     juce::TextButton sequencerResetButton { "Reset" };
+    juce::ToggleButton mpeToggle { "MPE" };
     juce::Label sequencerTickLabel;
 
     juce::Rectangle<int> headerBounds;

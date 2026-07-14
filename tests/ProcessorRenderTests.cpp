@@ -80,8 +80,21 @@ int main()
     }
     assert(sequencerSum > 0.01f);
     assert(sequencerProcessor.getSequencerTick() > 0);
+    auto sceneChanged = false;
+    for (int block = 0; block < 300; ++block)
+    {
+        juce::MidiBuffer sequencerMidi;
+        juce::ignoreUnused(renderAndSum(sequencerProcessor, sequencerMidi, 512));
+        if (sequencerProcessor.getCurrentPerformanceScene() == 1)
+        {
+            sceneChanged = true;
+            break;
+        }
+    }
+    assert(sceneChanged);
     sequencerProcessor.resetSequencerPlayback();
     assert(sequencerProcessor.getSequencerTick() == 0);
+    assert(sequencerProcessor.getCurrentPerformanceScene() == 0);
 
     juce::MidiBuffer chord;
     chord.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
@@ -152,6 +165,21 @@ int main()
     assert(expressiveReleaseSum > 0.0f);
     assert(std::isfinite(expressiveReleaseSum));
 
+    ChimeraEngineAudioProcessor mpeProcessor;
+    mpeProcessor.prepareToPlay(48000.0, 512);
+    mpeProcessor.getParameters().getParameter("fxMix")->setValueNotifyingHost(0.0f);
+    assert(mpeProcessor.loadSynthPresetForPart(0, "Expressive Mono").wasOk());
+    mpeProcessor.setPartMix(1, 1.0f, 0.0f, false);
+    mpeProcessor.setMpeExpressionEnabled(true);
+    juce::MidiBuffer mpeMidi;
+    mpeMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
+    mpeMidi.addEvent(juce::MidiMessage::controllerEvent(2, 1, 100), 32);
+    mpeMidi.addEvent(juce::MidiMessage::channelPressureChange(2, 90), 64);
+    mpeMidi.addEvent(juce::MidiMessage::pitchWheel(2, 12000), 96);
+    const auto mpeSum = renderAndSum(mpeProcessor, mpeMidi, 512);
+    assert(mpeSum > 0.01f);
+    assert(std::isfinite(mpeSum));
+
     juce::MidiBuffer lowVelocityMidi;
     lowVelocityMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(40)), 0);
     const auto lowVelocitySum = renderAndSum(presetProcessor, lowVelocityMidi, 512);
@@ -199,6 +227,31 @@ int main()
         arpContinuationSum += renderAndSum(arpProcessor, noEvents, 512);
     }
     assert(arpContinuationSum > 0.01f);
+
+    ChimeraEngineAudioProcessor performanceArpProcessor;
+    performanceArpProcessor.prepareToPlay(48000.0, 512);
+    assert(performanceArpProcessor.loadSynthPresetForPart(0, "Stack").wasOk());
+    assert(performanceArpProcessor.loadSynthPresetForPart(1, "Velocity Split").wasOk());
+    assert(performanceArpProcessor.loadSynthPresetForPart(2, "Saw").wasOk());
+    assert(performanceArpProcessor.loadSynthPresetForPart(3, "Square").wasOk());
+    performanceArpProcessor.setPerformancePart(0, { 0, 127, 1, 127, 1, true, 0, 1.0f, -0.4f, "Arp Lane 1" });
+    performanceArpProcessor.setPerformancePart(1, { 0, 127, 1, 127, 1, true, 1, 0.9f, 0.1f, "Arp Lane 2" });
+    performanceArpProcessor.setPerformancePart(2, { 0, 127, 1, 127, 1, true, 2, 0.8f, 0.4f, "Arp Lane 3" });
+    performanceArpProcessor.setPerformancePart(3, { 0, 127, 1, 127, 1, true, 3, 0.8f, 0.7f, "Arp Lane 4" });
+    performanceArpProcessor.setPerformanceModeEnabled(true);
+    performanceArpProcessor.getParameters().getParameter("arpEnabled")->setValueNotifyingHost(1.0f);
+    juce::MidiBuffer performanceArpChord;
+    performanceArpChord.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    performanceArpChord.addEvent(juce::MidiMessage::noteOn(1, 64, juce::uint8(100)), 0);
+    performanceArpChord.addEvent(juce::MidiMessage::noteOn(1, 67, juce::uint8(100)), 0);
+    auto performanceArpSum = renderAndSum(performanceArpProcessor, performanceArpChord, 512);
+    for (int block = 0; block < 20; ++block)
+    {
+        juce::MidiBuffer noEvents;
+        performanceArpSum += renderAndSum(performanceArpProcessor, noEvents, 512);
+    }
+    assert(performanceArpSum > 0.01f);
+    assert(std::isfinite(performanceArpSum));
 
     ChimeraEngineAudioProcessor multiPartProcessor;
     multiPartProcessor.prepareToPlay(48000.0, 512);
@@ -253,6 +306,8 @@ int main()
 
     ChimeraEngineAudioProcessor stateSourceProcessor;
     stateSourceProcessor.prepareToPlay(48000.0, 512);
+    stateSourceProcessor.applyPerformanceScene(1);
+    stateSourceProcessor.setMpeExpressionEnabled(true);
     assert(stateSourceProcessor.loadSynthPresetForPart(1, "Stack").wasOk());
     stateSourceProcessor.setPartMix(1, 0.5f, -0.75f, true);
     stateSourceProcessor.setInsertEffect(0, chimera::fx::EffectType::SmallStereo);
@@ -267,6 +322,8 @@ int main()
     restoredStateProcessor.prepareToPlay(48000.0, 512);
     restoredStateProcessor.setStateInformation(stateData.getData(), static_cast<int>(stateData.getSize()));
     assert(restoredStateProcessor.isPerformanceModeEnabled());
+    assert(restoredStateProcessor.getCurrentPerformanceScene() == 1);
+    assert(restoredStateProcessor.isMpeExpressionEnabled());
     assert(restoredStateProcessor.getPartPatchName(1) == "Stack");
     assert(std::abs(restoredStateProcessor.getPartLevel(1) - 0.5f) < 0.001f);
     assert(std::abs(restoredStateProcessor.getPartPan(1) + 0.75f) < 0.001f);

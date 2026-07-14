@@ -125,12 +125,12 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     addPartMixerControls();
 
     for (const auto& text : {
-             "Element 1  OSC  Pan L  Fine -7",
-             "Element 2  OSC  Pan R  Fine +7",
-             "Element 3  OSC  Center  Env Soft",
-             "Element 4  Reserved",
-             "Velocity zones: low / mid / high",
-             "FX send follows global mix" })
+             "SEQ -> SCENE -> 4 ARP LANES",
+             "ARP 1 -> PART 1 -> INSERT FX",
+             "ARP 2 -> PART 2 -> SYSTEM FX",
+             "MPE -> PER-NOTE EXPRESSION",
+             "SCENE -> MIXER + FX VARIATION",
+             "MIDI IN -> MULTITIMBRAL ENGINE" })
         ignoreUnused(addPanelLabel(text));
 
     keyboardState.addListener(this);
@@ -163,7 +163,7 @@ void ChimeraEngineAudioProcessorEditor::paint(juce::Graphics& g)
     drawPanel(g, PanelId::Performance, "Arpeggiator");
     drawPanel(g, PanelId::Presets, "Voice Select");
     drawPanel(g, PanelId::Mixer, "16-Part Mixer");
-    drawPanel(g, PanelId::ElementMonitor, "Element Monitor");
+    drawPanel(g, PanelId::ElementMonitor, "MIDI Flow");
 
     auto keyboardFrame = keyboard.getBounds().expanded(8, 10);
     g.setColour(juce::Colour(0xff080a0d));
@@ -259,7 +259,7 @@ void ChimeraEngineAudioProcessorEditor::resized()
     arpArea.removeFromTop(8);
     arpToggle.setBounds(arpArea.removeFromTop(30));
     arpArea.removeFromTop(8);
-    fitRow({ &demoSequenceButton, &sequencerPlayButton, &sequencerResetButton }, arpArea.removeFromTop(28), 5);
+    fitRow({ &demoSequenceButton, &sequencerPlayButton, &sequencerResetButton, &mpeToggle }, arpArea.removeFromTop(28), 5);
     arpArea.removeFromTop(4);
     sequencerTickLabel.setBounds(arpArea.removeFromTop(22));
 
@@ -494,6 +494,15 @@ void ChimeraEngineAudioProcessorEditor::addTransportControls()
     };
     addAndMakeVisible(sequencerResetButton);
 
+    mpeToggle.setToggleState(owner.isMpeExpressionEnabled(), juce::dontSendNotification);
+    mpeToggle.onClick = [this]
+    {
+        owner.setMpeExpressionEnabled(mpeToggle.getToggleState());
+        lcdLine.setText(owner.isMpeExpressionEnabled() ? "MPE expression enabled" : "MPE expression disabled",
+                        juce::dontSendNotification);
+    };
+    addAndMakeVisible(mpeToggle);
+
     sequencerTickLabel.setJustificationType(juce::Justification::centredLeft);
     sequencerTickLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc7d2dc));
     addAndMakeVisible(sequencerTickLabel);
@@ -503,7 +512,12 @@ void ChimeraEngineAudioProcessorEditor::addTransportControls()
 void ChimeraEngineAudioProcessorEditor::refreshTransportControls()
 {
     sequencerPlayButton.setButtonText(owner.isSequencerPlaybackEnabled() ? "Stop" : "Play");
-    sequencerTickLabel.setText("SEQ TICK " + juce::String(owner.getSequencerTick()), juce::dontSendNotification);
+    if (mpeToggle.getToggleState() != owner.isMpeExpressionEnabled())
+        mpeToggle.setToggleState(owner.isMpeExpressionEnabled(), juce::dontSendNotification);
+    sequencerTickLabel.setText("TICK " + juce::String(owner.getSequencerTick())
+                                   + "  VAR " + juce::String(owner.getCurrentPerformanceScene() + 1)
+                                   + (owner.isMpeExpressionEnabled() ? "  MPE" : ""),
+                               juce::dontSendNotification);
 }
 
 void ChimeraEngineAudioProcessorEditor::drawPanel(juce::Graphics& g, PanelId panel, const juce::String& panelTitle)

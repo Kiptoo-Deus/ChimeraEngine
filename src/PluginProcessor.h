@@ -68,6 +68,10 @@ public:
     void resetSequencerPlayback();
     void seedDemoSequence();
     int getSequencerTick() const { return static_cast<int>(sequencerTick); }
+    int getCurrentPerformanceScene() const { return currentPerformanceScene; }
+    void applyPerformanceScene(int sceneIndex);
+    void setMpeExpressionEnabled(bool shouldBeEnabled) { mpeExpressionEnabled = shouldBeEnabled; }
+    bool isMpeExpressionEnabled() const { return mpeExpressionEnabled; }
     static constexpr int getPartCount() { return static_cast<int>(maxParts); }
     static constexpr int getMaxVoiceCount() { return static_cast<int>(maxVoices); }
 
@@ -170,8 +174,20 @@ private:
 
     struct ActiveArpeggiatorNote
     {
+        int laneIndex = 0;
         int partIndex = 0;
         int note = 0;
+    };
+
+    struct ArpeggiatorLane
+    {
+        chimera::engine::Arpeggiator engine;
+        std::vector<HeldArpeggiatorNote> heldNotes;
+        std::vector<ActiveArpeggiatorNote> activeNotes;
+        int internalPartIndex = 0;
+        int samplesUntilStep = 0;
+        int samplesUntilGate = 0;
+        bool enabled = true;
     };
 
     static constexpr size_t maxParts = 16;
@@ -188,11 +204,16 @@ private:
     void releaseVoice(ActiveVoice& voice);
     ActiveVoice& allocateVoice();
     void startVoice(ActiveVoice& target, int partIndex, int note, int velocity, float level = 1.0f, float pan = 0.0f);
-    void advanceArpeggiator();
-    void refreshArpeggiatorHeldNotes();
-    void stopActiveArpeggiatorNotes();
+    void addHeldArpeggiatorNote(int laneIndex, int partIndex, int note, int velocity);
+    void removeHeldArpeggiatorNote(int laneIndex, int partIndex, int note);
+    void advanceArpeggiators();
+    void advanceArpeggiatorLane(int laneIndex);
+    void refreshArpeggiatorHeldNotes(int laneIndex);
+    void stopActiveArpeggiatorNotes(int laneIndex);
+    void stopAllActiveArpeggiatorNotes();
     void applyFxConfiguration(bool resetFx);
     void addSequencerEventsForBlock(juce::MidiBuffer& midi, int numSamples);
+    void applySequencerScenesForRange(int startTick, int endTick);
     int sequencerLoopEndTick() const;
     StereoSample renderVoiceSample();
 
@@ -207,23 +228,20 @@ private:
     std::array<float, maxParts> aftertouchValues {};
     juce::String currentPatchName { "Sine" };
     std::array<ActiveVoice, maxVoices> voices;
-    chimera::engine::Arpeggiator arpeggiator;
+    std::array<ArpeggiatorLane, chimera::engine::Performance::partCount> arpeggiatorLanes;
     chimera::engine::Performance activePerformance;
     chimera::engine::Sequencer sequencer;
     std::array<chimera::fx::WorkstationFx, 2> workstationFx;
     std::array<chimera::fx::EffectType, chimera::fx::InsertRack::slotCount> insertEffects {};
-    std::vector<HeldArpeggiatorNote> heldArpeggiatorNotes;
-    std::vector<ActiveArpeggiatorNote> activeArpeggiatorNotes;
-    int arpeggiatorPartIndex = 0;
     double currentSampleRate = 44100.0;
     uint64_t voiceAgeCounter = 0;
-    int arpeggiatorSamplesUntilStep = 0;
-    int arpeggiatorSamplesUntilGate = 0;
     float chorusSend = 0.18f;
     float reverbSend = 0.16f;
     double sequencerTick = 0.0;
+    int currentPerformanceScene = 0;
     bool sequencerPlaybackEnabled = false;
     bool sequencerDemoSeeded = false;
+    bool mpeExpressionEnabled = false;
     bool arpeggiatorWasEnabled = false;
     bool performanceModeEnabled = false;
 };
