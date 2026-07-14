@@ -8,10 +8,14 @@
 #include "dsp/SamplePlayer.h"
 #include "dsp/SampleZone.h"
 #include "engine/Arpeggiator.h"
+#include "engine/ArpLibrary.h"
+#include "engine/DrumKit.h"
 #include "engine/Performance.h"
+#include "engine/SampleLibrary.h"
 #include "engine/Sequencer.h"
 #include "fx/FxChain.h"
 #include <array>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -72,6 +76,36 @@ public:
     void applyPerformanceScene(int sceneIndex);
     void setMpeExpressionEnabled(bool shouldBeEnabled) { mpeExpressionEnabled = shouldBeEnabled; }
     bool isMpeExpressionEnabled() const { return mpeExpressionEnabled; }
+    void applyMidi2PerNoteController(int midiChannel, int midiNote, int controller, float value);
+    void setLiveRecordingEnabled(bool shouldRecord, bool overdub, bool punch);
+    bool isLiveRecordingEnabled() const { return liveRecordingEnabled; }
+    void setCurrentSequencerTrack(int trackIndex);
+    int getCurrentSequencerTrack() const { return currentSequencerTrack; }
+    bool addPatternPhraseNote(int sectionIndex, int trackIndex, int tick, int durationTicks, int note, int velocity, int channel);
+    void assignPatternSection(int sectionIndex, int phraseSlot);
+    int getPatternSectionPhrase(int sectionIndex) const;
+    int getPatternSectionNoteCount(int sectionIndex) const;
+    bool saveUserArp(int slotIndex, const juce::String& name);
+    bool assignArpToLane(int laneIndex, int userSlotIndex);
+    int getArpLaneAssignment(int laneIndex) const;
+    bool storePerformance(int index, const juce::String& name);
+    bool recallPerformance(int index);
+    juce::String getPerformanceName(int index) const;
+    void captureSceneSnapshot(int sceneIndex, const juce::String& name);
+    juce::String getSceneName(int sceneIndex) const;
+    bool mapDrumKey(int midiNote, const juce::String& name, int waveformId);
+    int getMappedDrumKeyCount() const;
+    bool isDrumKitModeEnabled() const { return drumKitModeEnabled; }
+    void setDrumKitModeEnabled(bool shouldBeEnabled) { drumKitModeEnabled = shouldBeEnabled; }
+    juce::Result indexSampleLibrary(const juce::File& root);
+    int getIndexedSampleCount() const { return indexedSampleCount; }
+    void setPresetFavorite(const juce::String& presetName, bool shouldBeFavorite);
+    bool isPresetFavorite(const juce::String& presetName) const;
+    juce::String getPresetMetadataSummary(const juce::String& presetName) const;
+    juce::String getVoiceEditSummary(int elementIndex) const;
+    juce::String getModMatrixSummary(int elementIndex) const;
+    float getOutputPeakLeft() const { return outputPeakLeft; }
+    float getOutputPeakRight() const { return outputPeakRight; }
     int getCurrentSongNoteCount() const;
     juce::Result exportCurrentSongToMidi(const juce::File& file) const;
     juce::Result importSongFromMidi(const juce::File& file);
@@ -194,6 +228,25 @@ private:
         bool enabled = true;
     };
 
+    struct SceneSnapshot
+    {
+        juce::String name { "Init Scene" };
+        std::array<float, 16> levels {};
+        std::array<float, 16> pans {};
+        std::array<bool, 16> enabled {};
+        std::array<chimera::fx::EffectType, chimera::fx::InsertRack::slotCount> inserts {};
+        std::array<int, chimera::engine::Performance::partCount> arpAssignments {};
+        float chorus = 0.18f;
+        float reverb = 0.16f;
+        bool valid = false;
+    };
+
+    struct ActiveRecordingNote
+    {
+        int startTick = 0;
+        int velocity = 100;
+    };
+
     static constexpr size_t maxParts = 16;
     static constexpr size_t maxVoices = 128;
     static constexpr size_t maxElements = 8;
@@ -204,6 +257,8 @@ private:
     void setActiveElementsForPart(int partIndex, std::array<LoadedElement, maxElements> elements, int count,
                                   const juce::String& patchName);
     void handleMidiMessage(const juce::MidiMessage& message);
+    void captureOutputMeters(const StereoSample& sample);
+    void recordLiveMidiMessage(const juce::MidiMessage& message);
     void stopVoicesForNote(int partIndex, int note);
     void releaseVoice(ActiveVoice& voice);
     ActiveVoice& allocateVoice();
@@ -234,19 +289,37 @@ private:
     juce::String currentPatchName { "Sine" };
     std::array<ActiveVoice, maxVoices> voices;
     std::array<ArpeggiatorLane, chimera::engine::Performance::partCount> arpeggiatorLanes;
+    chimera::engine::ArpLibrary arpLibrary;
+    chimera::engine::DrumKit drumKit;
+    chimera::engine::PerformanceBank performanceBank;
+    chimera::engine::SampleLibrary sampleLibrary;
     chimera::engine::Performance activePerformance;
     chimera::engine::Sequencer sequencer;
+    std::array<SceneSnapshot, 8> sceneSnapshots;
+    std::array<int, chimera::engine::Pattern::sectionCount> patternSectionPhrases {};
+    std::array<int, chimera::engine::Performance::partCount> arpLaneAssignments {};
+    std::map<juce::String, bool> presetFavorites;
+    std::map<std::pair<int, int>, ActiveRecordingNote> activeRecordingNotes;
+    std::map<std::pair<int, int>, float> midi2PerNotePressure;
     std::array<chimera::fx::WorkstationFx, 2> workstationFx;
     std::array<chimera::fx::EffectType, chimera::fx::InsertRack::slotCount> insertEffects {};
     double currentSampleRate = 44100.0;
     uint64_t voiceAgeCounter = 0;
     float chorusSend = 0.18f;
     float reverbSend = 0.16f;
+    float outputPeakLeft = 0.0f;
+    float outputPeakRight = 0.0f;
     double sequencerTick = 0.0;
+    int indexedSampleCount = 0;
+    int currentSequencerTrack = 0;
     int currentPerformanceScene = 0;
     bool sequencerPlaybackEnabled = false;
     bool sequencerDemoSeeded = false;
     bool mpeExpressionEnabled = false;
+    bool liveRecordingEnabled = false;
+    bool overdubRecordingEnabled = true;
+    bool punchRecordingEnabled = false;
+    bool drumKitModeEnabled = false;
     bool arpeggiatorWasEnabled = false;
     bool performanceModeEnabled = false;
 };

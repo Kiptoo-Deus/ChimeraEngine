@@ -149,6 +149,30 @@ int main()
     assert(sequencerProcessor.getSequencerTick() == 0);
     assert(sequencerProcessor.getCurrentPerformanceScene() == 0);
 
+    ChimeraEngineAudioProcessor recordingProcessor;
+    recordingProcessor.prepareToPlay(48000.0, 512);
+    recordingProcessor.setLiveRecordingEnabled(true, true, false);
+    juce::MidiBuffer recordOn;
+    recordOn.addEvent(juce::MidiMessage::noteOn(1, 62, juce::uint8(100)), 0);
+    juce::ignoreUnused(renderAndSum(recordingProcessor, recordOn, 512));
+    recordingProcessor.setSequencerPlaybackEnabled(true);
+    for (int block = 0; block < 4; ++block)
+    {
+        juce::MidiBuffer noEvents;
+        juce::ignoreUnused(renderAndSum(recordingProcessor, noEvents, 512));
+    }
+    juce::MidiBuffer recordOff;
+    recordOff.addEvent(juce::MidiMessage::noteOff(1, 62), 0);
+    juce::ignoreUnused(renderAndSum(recordingProcessor, recordOff, 512));
+    assert(recordingProcessor.getCurrentSongNoteCount() > 0);
+    assert(recordingProcessor.addPatternPhraseNote(0, 0, 0, 120, 60, 100, 1));
+    recordingProcessor.assignPatternSection(0, 12);
+    assert(recordingProcessor.getPatternSectionPhrase(0) == 12);
+    assert(recordingProcessor.getPatternSectionNoteCount(0) == 1);
+    assert(recordingProcessor.saveUserArp(3, "Test User Arp"));
+    assert(recordingProcessor.assignArpToLane(2, 3));
+    assert(recordingProcessor.getArpLaneAssignment(2) == 3);
+
     juce::MidiBuffer chord;
     chord.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
     chord.addEvent(juce::MidiMessage::noteOn(1, 64, juce::uint8(100)), 0);
@@ -338,6 +362,9 @@ int main()
     performanceProcessor.setPerformancePart(1, { 60, 127, 1, 127, 1, true, 1, 0.9f, 0.2f, "Upper" });
     performanceProcessor.setPerformanceModeEnabled(true);
     assert(performanceProcessor.isPerformanceModeEnabled());
+    assert(performanceProcessor.storePerformance(7, "Stored Layer"));
+    assert(performanceProcessor.recallPerformance(7));
+    assert(performanceProcessor.getPerformanceName(7) == "Stored Layer");
 
     juce::MidiBuffer lowerPerformanceMidi;
     lowerPerformanceMidi.addEvent(juce::MidiMessage::noteOn(1, 48, juce::uint8(100)), 0);
@@ -357,6 +384,44 @@ int main()
     assert(performanceLeft > 0.01f);
     assert(performanceRight < performanceLeft * 0.2f);
 
+    ChimeraEngineAudioProcessor sceneSnapshotProcessor;
+    sceneSnapshotProcessor.prepareToPlay(48000.0, 512);
+    sceneSnapshotProcessor.setPartMix(0, 0.42f, -0.5f, true);
+    sceneSnapshotProcessor.setInsertEffect(2, chimera::fx::EffectType::Phaser);
+    sceneSnapshotProcessor.assignArpToLane(0, 5);
+    sceneSnapshotProcessor.captureSceneSnapshot(3, "Breakdown");
+    sceneSnapshotProcessor.setPartMix(0, 1.0f, 0.5f, true);
+    sceneSnapshotProcessor.setInsertEffect(2, chimera::fx::EffectType::None);
+    sceneSnapshotProcessor.applyPerformanceScene(3);
+    assert(sceneSnapshotProcessor.getSceneName(3) == "Breakdown");
+    assert(std::abs(sceneSnapshotProcessor.getPartLevel(0) - 0.42f) < 0.001f);
+    assert(sceneSnapshotProcessor.getInsertEffect(2) == chimera::fx::EffectType::Phaser);
+    assert(sceneSnapshotProcessor.getArpLaneAssignment(0) == 5);
+
+    ChimeraEngineAudioProcessor drumProcessor;
+    drumProcessor.prepareToPlay(48000.0, 512);
+    assert(drumProcessor.mapDrumKey(36, "Kick", 1));
+    assert(drumProcessor.getMappedDrumKeyCount() == 1);
+    drumProcessor.setDrumKitModeEnabled(true);
+    juce::MidiBuffer drumMidi;
+    drumMidi.addEvent(juce::MidiMessage::noteOn(1, 36, juce::uint8(110)), 0);
+    assert(renderAndSum(drumProcessor, drumMidi, 512) > 0.01f);
+
+    ChimeraEngineAudioProcessor metadataProcessor;
+    metadataProcessor.prepareToPlay(48000.0, 512);
+    metadataProcessor.setPresetFavorite("Stack", true);
+    assert(metadataProcessor.isPresetFavorite("Stack"));
+    assert(metadataProcessor.getPresetMetadataSummary("Stack").contains("Favorite"));
+    assert(metadataProcessor.getVoiceEditSummary(0).contains("Element"));
+    assert(metadataProcessor.getModMatrixSummary(0).contains("Mod matrix"));
+    assert(metadataProcessor.indexSampleLibrary(exportDir).wasOk());
+    assert(metadataProcessor.getIndexedSampleCount() > 0);
+    metadataProcessor.applyMidi2PerNoteController(1, 60, 74, 0.75f);
+    juce::MidiBuffer meteredMidi;
+    meteredMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+    assert(renderAndSum(metadataProcessor, meteredMidi, 512) > 0.01f);
+    assert(metadataProcessor.getOutputPeakLeft() > 0.0f || metadataProcessor.getOutputPeakRight() > 0.0f);
+
     ChimeraEngineAudioProcessor stateSourceProcessor;
     stateSourceProcessor.prepareToPlay(48000.0, 512);
     stateSourceProcessor.applyPerformanceScene(1);
@@ -372,6 +437,13 @@ int main()
     setFloatParameter(stateSourceProcessor, "masterCompThreshold", -24.0f);
     setFloatParameter(stateSourceProcessor, "masterCompRatio", 5.0f);
     setFloatParameter(stateSourceProcessor, "masterCompMakeup", 3.0f);
+    stateSourceProcessor.assignPatternSection(2, 44);
+    assert(stateSourceProcessor.saveUserArp(6, "State Arp"));
+    assert(stateSourceProcessor.assignArpToLane(1, 6));
+    stateSourceProcessor.captureSceneSnapshot(2, "State Scene");
+    stateSourceProcessor.setPresetFavorite("Stack", true);
+    stateSourceProcessor.setDrumKitModeEnabled(true);
+    stateSourceProcessor.setLiveRecordingEnabled(true, true, true);
     stateSourceProcessor.setPerformancePart(0, { 0, 127, 1, 127, 2, true, 1, 1.0f, 0.0f, "Restored Part" });
     stateSourceProcessor.setPerformanceModeEnabled(true);
     juce::MemoryBlock stateData;
@@ -397,6 +469,12 @@ int main()
     assert(std::abs(getFloatParameter(restoredStateProcessor, "masterCompThreshold") + 24.0f) < 0.001f);
     assert(std::abs(getFloatParameter(restoredStateProcessor, "masterCompRatio") - 5.0f) < 0.001f);
     assert(std::abs(getFloatParameter(restoredStateProcessor, "masterCompMakeup") - 3.0f) < 0.001f);
+    assert(restoredStateProcessor.getPatternSectionPhrase(2) == 44);
+    assert(restoredStateProcessor.getArpLaneAssignment(1) == 6);
+    assert(restoredStateProcessor.getSceneName(2) == "State Scene");
+    assert(restoredStateProcessor.isPresetFavorite("Stack"));
+    assert(restoredStateProcessor.isDrumKitModeEnabled());
+    assert(restoredStateProcessor.isLiveRecordingEnabled());
     juce::MidiBuffer restoredPartMidi;
     restoredPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
     assert(renderAndSum(restoredStateProcessor, restoredPartMidi, 512) > 0.01f);

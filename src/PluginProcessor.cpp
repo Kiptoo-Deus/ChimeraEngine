@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <set>
 
 namespace
 {
@@ -118,6 +119,10 @@ ChimeraEngineAudioProcessor::ChimeraEngineAudioProcessor()
 {
     insertEffects.fill(chimera::fx::EffectType::None);
     insertEffects[0] = chimera::fx::EffectType::Compressor;
+    patternSectionPhrases.fill(0);
+    arpLaneAssignments.fill(0);
+    for (int scene = 0; scene < static_cast<int>(sceneSnapshots.size()); ++scene)
+        sceneSnapshots[static_cast<size_t>(scene)].name = "Scene " + juce::String(scene + 1);
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout ChimeraEngineAudioProcessor::createParameterLayout()
@@ -277,6 +282,7 @@ void ChimeraEngineAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             advanceArpeggiators();
 
         const auto rendered = renderVoiceSample();
+        captureOutputMeters(rendered);
         if (buffer.getNumChannels() == 1)
             buffer.setSample(0, sample, (rendered.left + rendered.right) * 0.5f);
         else
@@ -351,6 +357,39 @@ void ChimeraEngineAudioProcessor::getStateInformation(juce::MemoryBlock& destDat
     state.setProperty("chimeraSequencerTick", sequencerTick, nullptr);
     state.setProperty("chimeraPerformanceScene", currentPerformanceScene, nullptr);
     state.setProperty("chimeraMpeExpression", mpeExpressionEnabled, nullptr);
+    state.setProperty("chimeraLiveRecording", liveRecordingEnabled, nullptr);
+    state.setProperty("chimeraOverdubRecording", overdubRecordingEnabled, nullptr);
+    state.setProperty("chimeraPunchRecording", punchRecordingEnabled, nullptr);
+    state.setProperty("chimeraCurrentSequencerTrack", currentSequencerTrack, nullptr);
+    state.setProperty("chimeraDrumKitMode", drumKitModeEnabled, nullptr);
+    state.setProperty("chimeraIndexedSampleCount", indexedSampleCount, nullptr);
+    for (int section = 0; section < chimera::engine::Pattern::sectionCount; ++section)
+        state.setProperty("chimeraPatternSectionPhrase" + juce::String(section), patternSectionPhrases[static_cast<size_t>(section)], nullptr);
+    for (int lane = 0; lane < chimera::engine::Performance::partCount; ++lane)
+        state.setProperty("chimeraArpLaneAssignment" + juce::String(lane), arpLaneAssignments[static_cast<size_t>(lane)], nullptr);
+    for (int scene = 0; scene < static_cast<int>(sceneSnapshots.size()); ++scene)
+    {
+        const auto& snapshot = sceneSnapshots[static_cast<size_t>(scene)];
+        const auto prefix = "chimeraScene" + juce::String(scene);
+        state.setProperty(prefix + "Name", snapshot.name, nullptr);
+        state.setProperty(prefix + "Valid", snapshot.valid, nullptr);
+        state.setProperty(prefix + "Chorus", snapshot.chorus, nullptr);
+        state.setProperty(prefix + "Reverb", snapshot.reverb, nullptr);
+        for (int part = 0; part < static_cast<int>(maxParts); ++part)
+        {
+            state.setProperty(prefix + "Part" + juce::String(part) + "Level", snapshot.levels[static_cast<size_t>(part)], nullptr);
+            state.setProperty(prefix + "Part" + juce::String(part) + "Pan", snapshot.pans[static_cast<size_t>(part)], nullptr);
+            state.setProperty(prefix + "Part" + juce::String(part) + "Enabled", snapshot.enabled[static_cast<size_t>(part)], nullptr);
+        }
+        for (int slot = 0; slot < chimera::fx::InsertRack::slotCount; ++slot)
+            state.setProperty(prefix + "Insert" + juce::String(slot),
+                              static_cast<int>(snapshot.inserts[static_cast<size_t>(slot)]),
+                              nullptr);
+        for (int lane = 0; lane < chimera::engine::Performance::partCount; ++lane)
+            state.setProperty(prefix + "ArpLane" + juce::String(lane), snapshot.arpAssignments[static_cast<size_t>(lane)], nullptr);
+    }
+    for (const auto& favorite : presetFavorites)
+        state.setProperty("chimeraPresetFavorite_" + favorite.first, favorite.second, nullptr);
 
     juce::MemoryOutputStream stream(destData, true);
     state.writeToStream(stream);
@@ -413,6 +452,52 @@ void ChimeraEngineAudioProcessor::setStateInformation(const void* data, int size
         sequencerTick = static_cast<double>(tree.getProperty("chimeraSequencerTick", 0.0));
         currentPerformanceScene = std::clamp(static_cast<int>(tree.getProperty("chimeraPerformanceScene", 0)), 0, 7);
         mpeExpressionEnabled = static_cast<bool>(tree.getProperty("chimeraMpeExpression", false));
+        liveRecordingEnabled = static_cast<bool>(tree.getProperty("chimeraLiveRecording", false));
+        overdubRecordingEnabled = static_cast<bool>(tree.getProperty("chimeraOverdubRecording", true));
+        punchRecordingEnabled = static_cast<bool>(tree.getProperty("chimeraPunchRecording", false));
+        currentSequencerTrack = std::clamp(static_cast<int>(tree.getProperty("chimeraCurrentSequencerTrack", 0)), 0, chimera::engine::Song::trackCount - 1);
+        drumKitModeEnabled = static_cast<bool>(tree.getProperty("chimeraDrumKitMode", false));
+        indexedSampleCount = std::max(0, static_cast<int>(tree.getProperty("chimeraIndexedSampleCount", 0)));
+        for (int section = 0; section < chimera::engine::Pattern::sectionCount; ++section)
+            patternSectionPhrases[static_cast<size_t>(section)] = std::clamp(static_cast<int>(tree.getProperty("chimeraPatternSectionPhrase" + juce::String(section), 0)),
+                                                                             0,
+                                                                             chimera::engine::Pattern::phraseSlots - 1);
+        for (int lane = 0; lane < chimera::engine::Performance::partCount; ++lane)
+            arpLaneAssignments[static_cast<size_t>(lane)] = std::clamp(static_cast<int>(tree.getProperty("chimeraArpLaneAssignment" + juce::String(lane), 0)),
+                                                                       0,
+                                                                       chimera::engine::ArpLibrary::userSlots - 1);
+        for (int scene = 0; scene < static_cast<int>(sceneSnapshots.size()); ++scene)
+        {
+            auto& snapshot = sceneSnapshots[static_cast<size_t>(scene)];
+            const auto prefix = "chimeraScene" + juce::String(scene);
+            snapshot.name = tree.getProperty(prefix + "Name", "Scene " + juce::String(scene + 1)).toString();
+            snapshot.valid = static_cast<bool>(tree.getProperty(prefix + "Valid", false));
+            snapshot.chorus = static_cast<float>(tree.getProperty(prefix + "Chorus", 0.18));
+            snapshot.reverb = static_cast<float>(tree.getProperty(prefix + "Reverb", 0.16));
+            for (int part = 0; part < static_cast<int>(maxParts); ++part)
+            {
+                snapshot.levels[static_cast<size_t>(part)] = static_cast<float>(tree.getProperty(prefix + "Part" + juce::String(part) + "Level", 1.0));
+                snapshot.pans[static_cast<size_t>(part)] = static_cast<float>(tree.getProperty(prefix + "Part" + juce::String(part) + "Pan", 0.0));
+                snapshot.enabled[static_cast<size_t>(part)] = static_cast<bool>(tree.getProperty(prefix + "Part" + juce::String(part) + "Enabled", true));
+            }
+            for (int slot = 0; slot < chimera::fx::InsertRack::slotCount; ++slot)
+            {
+                const auto rawType = static_cast<int>(tree.getProperty(prefix + "Insert" + juce::String(slot), static_cast<int>(chimera::fx::EffectType::None)));
+                snapshot.inserts[static_cast<size_t>(slot)] = static_cast<chimera::fx::EffectType>(std::clamp(rawType, 0, chimera::fx::effectTypeCount - 1));
+            }
+            for (int lane = 0; lane < chimera::engine::Performance::partCount; ++lane)
+                snapshot.arpAssignments[static_cast<size_t>(lane)] = std::clamp(static_cast<int>(tree.getProperty(prefix + "ArpLane" + juce::String(lane), 0)),
+                                                                                0,
+                                                                                chimera::engine::ArpLibrary::userSlots - 1);
+        }
+        presetFavorites.clear();
+        for (int propertyIndex = 0; propertyIndex < tree.getNumProperties(); ++propertyIndex)
+        {
+            const auto name = tree.getPropertyName(propertyIndex).toString();
+            if (name.startsWith("chimeraPresetFavorite_"))
+                presetFavorites[name.fromFirstOccurrenceOf("chimeraPresetFavorite_", false, false)] =
+                    static_cast<bool>(tree.getProperty(tree.getPropertyName(propertyIndex), false));
+        }
     }
 }
 
@@ -584,6 +669,21 @@ void ChimeraEngineAudioProcessor::seedDemoSequence()
 void ChimeraEngineAudioProcessor::applyPerformanceScene(int sceneIndex)
 {
     currentPerformanceScene = std::clamp(sceneIndex, 0, 7);
+    const auto& snapshot = sceneSnapshots[static_cast<size_t>(currentPerformanceScene)];
+    if (snapshot.valid)
+    {
+        for (int part = 0; part < static_cast<int>(maxParts); ++part)
+            setPartMix(part,
+                       snapshot.levels[static_cast<size_t>(part)],
+                       snapshot.pans[static_cast<size_t>(part)],
+                       snapshot.enabled[static_cast<size_t>(part)]);
+        for (int slot = 0; slot < chimera::fx::InsertRack::slotCount; ++slot)
+            setInsertEffect(slot, snapshot.inserts[static_cast<size_t>(slot)]);
+        setSystemFxSends(snapshot.chorus, snapshot.reverb);
+        arpLaneAssignments = snapshot.arpAssignments;
+        return;
+    }
+
     if (currentPerformanceScene == 0)
     {
         setPartMix(0, 0.9f, -0.15f, true);
@@ -608,6 +708,239 @@ void ChimeraEngineAudioProcessor::setPerformancePart(int performancePartIndex, c
 {
     zone.internalPartIndex = std::clamp(zone.internalPartIndex, 0, static_cast<int>(maxParts) - 1);
     activePerformance.setPart(performancePartIndex, std::move(zone));
+}
+
+void ChimeraEngineAudioProcessor::applyMidi2PerNoteController(int midiChannel, int midiNote, int controller, float value)
+{
+    const auto clampedChannel = std::clamp(midiChannel, 1, 16);
+    const auto clampedNote = std::clamp(midiNote, 0, 127);
+    const auto clampedValue = std::clamp(value, 0.0f, 1.0f);
+    if (controller == 74 || controller == 128)
+        midi2PerNotePressure[{ clampedChannel, clampedNote }] = clampedValue;
+
+    if (mpeExpressionEnabled)
+        aftertouchValues[0] = std::max(aftertouchValues[0], clampedValue);
+}
+
+void ChimeraEngineAudioProcessor::setLiveRecordingEnabled(bool shouldRecord, bool overdub, bool punch)
+{
+    liveRecordingEnabled = shouldRecord;
+    overdubRecordingEnabled = overdub;
+    punchRecordingEnabled = punch;
+    activeRecordingNotes.clear();
+    if (liveRecordingEnabled && !overdubRecordingEnabled)
+        sequencer.song(0).clearTrack(currentSequencerTrack);
+}
+
+void ChimeraEngineAudioProcessor::setCurrentSequencerTrack(int trackIndex)
+{
+    currentSequencerTrack = std::clamp(trackIndex, 0, chimera::engine::Song::trackCount - 1);
+}
+
+bool ChimeraEngineAudioProcessor::addPatternPhraseNote(int sectionIndex, int trackIndex, int tick, int durationTicks, int note, int velocity, int channel)
+{
+    return sequencer.pattern(0).addPhraseNote(sectionIndex,
+                                              trackIndex,
+                                              { tick, durationTicks, note, velocity, channel });
+}
+
+void ChimeraEngineAudioProcessor::assignPatternSection(int sectionIndex, int phraseSlot)
+{
+    if (sectionIndex < 0 || sectionIndex >= chimera::engine::Pattern::sectionCount)
+        return;
+
+    patternSectionPhrases[static_cast<size_t>(sectionIndex)] = std::clamp(phraseSlot, 0, chimera::engine::Pattern::phraseSlots - 1);
+}
+
+int ChimeraEngineAudioProcessor::getPatternSectionPhrase(int sectionIndex) const
+{
+    if (sectionIndex < 0 || sectionIndex >= chimera::engine::Pattern::sectionCount)
+        return 0;
+
+    return patternSectionPhrases[static_cast<size_t>(sectionIndex)];
+}
+
+int ChimeraEngineAudioProcessor::getPatternSectionNoteCount(int sectionIndex) const
+{
+    if (sectionIndex < 0 || sectionIndex >= chimera::engine::Pattern::sectionCount)
+        return 0;
+
+    auto total = 0;
+    const auto& section = sequencer.pattern(0).section(sectionIndex);
+    for (const auto& track : section.tracks)
+        total += track.noteCount();
+    return total;
+}
+
+bool ChimeraEngineAudioProcessor::saveUserArp(int slotIndex, const juce::String& name)
+{
+    chimera::engine::ArpPattern pattern;
+    pattern.id = std::clamp(slotIndex, 0, chimera::engine::ArpLibrary::userSlots - 1);
+    pattern.name = name.isEmpty() ? "User Arp " + std::to_string(pattern.id + 1) : name.toStdString();
+    pattern.category = "User";
+    pattern.lengthTicks = chimera::engine::Song::ppq;
+    pattern.steps = { { 0, 0, 100, 120 }, { 120, 4, 96, 120 }, { 240, 7, 96, 120 }, { 360, 12, 92, 120 } };
+    return arpLibrary.setUser(slotIndex, std::move(pattern));
+}
+
+bool ChimeraEngineAudioProcessor::assignArpToLane(int laneIndex, int userSlotIndex)
+{
+    if (laneIndex < 0 || laneIndex >= chimera::engine::Performance::partCount)
+        return false;
+    if (!arpLibrary.getUser(userSlotIndex).has_value() && !saveUserArp(userSlotIndex, {}))
+        return false;
+
+    arpLaneAssignments[static_cast<size_t>(laneIndex)] = std::clamp(userSlotIndex, 0, chimera::engine::ArpLibrary::userSlots - 1);
+    return true;
+}
+
+int ChimeraEngineAudioProcessor::getArpLaneAssignment(int laneIndex) const
+{
+    if (laneIndex < 0 || laneIndex >= chimera::engine::Performance::partCount)
+        return 0;
+
+    return arpLaneAssignments[static_cast<size_t>(laneIndex)];
+}
+
+bool ChimeraEngineAudioProcessor::storePerformance(int index, const juce::String& name)
+{
+    if (index < 0 || index >= chimera::engine::PerformanceBank::slotCount)
+        return false;
+
+    chimera::engine::PerformanceSlot slot;
+    slot.name = name.isEmpty() ? "Stored Performance " + std::to_string(index + 1) : name.toStdString();
+    for (int part = 0; part < chimera::engine::Performance::partCount; ++part)
+        slot.parts[static_cast<size_t>(part)] = activePerformance.getPart(part);
+    performanceBank.setPerformance(index, std::move(slot));
+    return true;
+}
+
+bool ChimeraEngineAudioProcessor::recallPerformance(int index)
+{
+    if (index < 0 || index >= chimera::engine::PerformanceBank::slotCount)
+        return false;
+
+    const auto& slot = performanceBank.getPerformance(index);
+    for (int part = 0; part < chimera::engine::Performance::partCount; ++part)
+        activePerformance.setPart(part, slot.parts[static_cast<size_t>(part)]);
+    performanceModeEnabled = true;
+    return true;
+}
+
+juce::String ChimeraEngineAudioProcessor::getPerformanceName(int index) const
+{
+    if (index < 0 || index >= chimera::engine::PerformanceBank::slotCount)
+        return {};
+
+    return performanceBank.getPerformance(index).name;
+}
+
+void ChimeraEngineAudioProcessor::captureSceneSnapshot(int sceneIndex, const juce::String& name)
+{
+    if (sceneIndex < 0 || sceneIndex >= static_cast<int>(sceneSnapshots.size()))
+        return;
+
+    auto& snapshot = sceneSnapshots[static_cast<size_t>(sceneIndex)];
+    snapshot.name = name.isEmpty() ? "Scene " + juce::String(sceneIndex + 1) : name;
+    for (int part = 0; part < static_cast<int>(maxParts); ++part)
+    {
+        snapshot.levels[static_cast<size_t>(part)] = getPartLevel(part);
+        snapshot.pans[static_cast<size_t>(part)] = getPartPan(part);
+        snapshot.enabled[static_cast<size_t>(part)] = isPartEnabled(part);
+    }
+    snapshot.inserts = insertEffects;
+    snapshot.arpAssignments = arpLaneAssignments;
+    snapshot.chorus = chorusSend;
+    snapshot.reverb = reverbSend;
+    snapshot.valid = true;
+}
+
+juce::String ChimeraEngineAudioProcessor::getSceneName(int sceneIndex) const
+{
+    if (sceneIndex < 0 || sceneIndex >= static_cast<int>(sceneSnapshots.size()))
+        return {};
+
+    return sceneSnapshots[static_cast<size_t>(sceneIndex)].name;
+}
+
+bool ChimeraEngineAudioProcessor::mapDrumKey(int midiNote, const juce::String& name, int waveformId)
+{
+    return drumKit.setKey({ midiNote, waveformId, name.toStdString(), 1.0f, 0.0f, 9, false, 0 });
+}
+
+int ChimeraEngineAudioProcessor::getMappedDrumKeyCount() const
+{
+    return drumKit.mappedKeyCount();
+}
+
+juce::Result ChimeraEngineAudioProcessor::indexSampleLibrary(const juce::File& root)
+{
+    if (!root.isDirectory())
+        return juce::Result::fail("Sample library folder does not exist: " + root.getFullPathName());
+
+    auto files = root.findChildFiles(juce::File::findFiles, true, "*.wav;*.aif;*.aiff");
+    indexedSampleCount = files.size();
+    for (int i = 0; i < files.size(); ++i)
+        sampleLibrary.addUserWaveform(0,
+                                      { 100000 + i,
+                                        files[i].getFileNameWithoutExtension().toStdString(),
+                                        "Imported",
+                                        static_cast<std::uint64_t>(std::max<juce::int64>(1, files[i].getSize())),
+                                        60,
+                                        0,
+                                        127,
+                                        1,
+                                        127 });
+    return indexedSampleCount > 0 ? juce::Result::ok() : juce::Result::fail("No audio files found in: " + root.getFullPathName());
+}
+
+void ChimeraEngineAudioProcessor::setPresetFavorite(const juce::String& presetName, bool shouldBeFavorite)
+{
+    presetFavorites[presetName] = shouldBeFavorite;
+}
+
+bool ChimeraEngineAudioProcessor::isPresetFavorite(const juce::String& presetName) const
+{
+    if (const auto found = presetFavorites.find(presetName); found != presetFavorites.end())
+        return found->second;
+    return false;
+}
+
+juce::String ChimeraEngineAudioProcessor::getPresetMetadataSummary(const juce::String& presetName) const
+{
+    chimera::preset::Patch patch;
+    const auto file = projectRoot().getChildFile("presets/Synth").getChildFile(presetName + ".chpatch");
+    if (chimera::preset::loadPatch(file, patch).failed())
+        return "Preset metadata unavailable";
+
+    return patch.metadata.category + "  Elements " + juce::String(static_cast<int>(patch.elements.size()))
+        + "  Mode " + patch.voiceMode
+        + (isPresetFavorite(presetName) ? "  Favorite" : "");
+}
+
+juce::String ChimeraEngineAudioProcessor::getVoiceEditSummary(int elementIndex) const
+{
+    const auto clampedElement = std::clamp(elementIndex, 0, static_cast<int>(maxElements) - 1);
+    const auto& part = parts[0];
+    if (clampedElement >= part.loadedElementCount)
+        return "Element " + juce::String(clampedElement + 1) + ": empty";
+
+    const auto& element = part.loadedElements[static_cast<size_t>(clampedElement)];
+    return "Element " + juce::String(clampedElement + 1)
+        + " Amp " + juce::String(element.ampAttack, 2) + "/" + juce::String(element.ampDecay1, 2) + "/" + juce::String(element.ampRelease, 2)
+        + " PitchDepth " + juce::String(element.pitchDepthCents, 1)
+        + " FilterDepth " + juce::String(element.filterDepth, 2);
+}
+
+juce::String ChimeraEngineAudioProcessor::getModMatrixSummary(int elementIndex) const
+{
+    const auto clampedElement = std::clamp(elementIndex, 0, static_cast<int>(maxElements) - 1);
+    const auto& part = parts[0];
+    if (clampedElement >= part.loadedElementCount)
+        return "Mod matrix: no element";
+
+    const auto& element = part.loadedElements[static_cast<size_t>(clampedElement)];
+    return "Mod matrix slots: " + juce::String(element.modSlotCount) + " serialized in patch";
 }
 
 int ChimeraEngineAudioProcessor::getCurrentSongNoteCount() const
@@ -803,9 +1136,24 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
     const auto arpeggiatorEnabled = *parameters.getRawParameterValue("arpEnabled") > 0.5f;
     const auto rawPartIndex = std::clamp(message.getChannel() - 1, 0, static_cast<int>(maxParts) - 1);
     const auto partIndex = mpeExpressionEnabled && message.getChannel() > 1 ? 0 : rawPartIndex;
+    recordLiveMidiMessage(message);
 
     if (message.isNoteOn())
     {
+        if (drumKitModeEnabled)
+        {
+            if (const auto drumKey = drumKit.getKey(message.getNoteNumber()))
+            {
+                startVoice(allocateVoice(),
+                           std::clamp(drumKey->outputBus, 0, static_cast<int>(maxParts) - 1),
+                           message.getNoteNumber(),
+                           std::clamp(static_cast<int>(message.getVelocity()), 1, 127),
+                           drumKey->level,
+                           drumKey->pan);
+                return;
+            }
+        }
+
         if (arpeggiatorEnabled)
         {
             const auto note = message.getNoteNumber();
@@ -874,6 +1222,7 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
 
     if (message.isNoteOff())
     {
+        midi2PerNotePressure.erase({ message.getChannel(), message.getNoteNumber() });
         if (arpeggiatorEnabled)
         {
             const auto note = message.getNoteNumber();
@@ -963,6 +1312,48 @@ void ChimeraEngineAudioProcessor::handleMidiMessage(const juce::MidiMessage& mes
     {
         const auto expressionPart = mpeExpressionEnabled && message.getChannel() > 1 ? 0 : partIndex;
         aftertouchValues[static_cast<size_t>(expressionPart)] = std::clamp(static_cast<float>(message.getChannelPressureValue()) / 127.0f, 0.0f, 1.0f);
+    }
+}
+
+void ChimeraEngineAudioProcessor::captureOutputMeters(const StereoSample& sample)
+{
+    outputPeakLeft = std::max(outputPeakLeft * 0.999f, std::abs(sample.left));
+    outputPeakRight = std::max(outputPeakRight * 0.999f, std::abs(sample.right));
+}
+
+void ChimeraEngineAudioProcessor::recordLiveMidiMessage(const juce::MidiMessage& message)
+{
+    if (!liveRecordingEnabled)
+        return;
+
+    const auto tick = static_cast<int>(std::round(sequencerTick));
+    if (punchRecordingEnabled && !sequencerPlaybackEnabled)
+        return;
+
+    if (message.isNoteOn())
+    {
+        activeRecordingNotes[{ message.getChannel(), message.getNoteNumber() }] =
+            { tick, std::clamp(static_cast<int>(message.getVelocity()), 1, 127) };
+        return;
+    }
+
+    if (message.isNoteOff())
+    {
+        const auto key = std::make_pair(message.getChannel(), message.getNoteNumber());
+        const auto found = activeRecordingNotes.find(key);
+        if (found == activeRecordingNotes.end())
+            return;
+
+        const auto start = found->second.startTick;
+        const auto velocity = found->second.velocity;
+        activeRecordingNotes.erase(found);
+        sequencer.song(0).recordNote(currentSequencerTrack,
+                                     start,
+                                     std::max(1, tick - start),
+                                     message.getNoteNumber(),
+                                     velocity,
+                                     message.getChannel());
+        sequencerDemoSeeded = true;
     }
 }
 
@@ -1386,7 +1777,11 @@ ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoi
             auto modCutoff = 0.0f;
             auto modAmp = 0.0f;
             auto modPan = 0.0f;
-            const auto expressive = std::max(modWheelValues[partIndex], aftertouchValues[partIndex]);
+            auto perNoteExpression = 0.0f;
+            if (const auto found = midi2PerNotePressure.find({ parts[partIndex].voiceMode == "poly" ? voice.partIndex + 1 : 1, voice.note });
+                found != midi2PerNotePressure.end())
+                perNoteExpression = found->second;
+            const auto expressive = std::max({ modWheelValues[partIndex], aftertouchValues[partIndex], perNoteExpression });
             for (int slot = 0; slot < voice.modSlotCounts[static_cast<size_t>(i)]; ++slot)
             {
                 const auto& modSlot = voice.modSlots[static_cast<size_t>(i)][static_cast<size_t>(slot)];

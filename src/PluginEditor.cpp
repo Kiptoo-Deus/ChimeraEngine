@@ -499,6 +499,28 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
             const auto result = owner.exportCurrentSongToMidi(file);
             lcdLine.setText(result.wasOk() ? "MIDI exported: " + file.getFileName() : result.getErrorMessage(), juce::dontSendNotification);
         }
+        else if (activePage == WorkstationPage::Arp)
+        {
+            owner.saveUserArp(0, "Front Panel Arp");
+            owner.assignArpToLane(0, 0);
+            lcdLine.setText("User arp saved and assigned to lane 1", juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Pattern)
+        {
+            owner.addPatternPhraseNote(0, 0, 0, 120, 60, 100, 1);
+            owner.assignPatternSection(0, 1);
+            lcdLine.setText("Pattern section A assigned to phrase 1", juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Sample)
+        {
+            const auto result = owner.indexSampleLibrary(exportDirectory());
+            lcdLine.setText(result.wasOk() ? "Sample index refreshed" : result.getErrorMessage(), juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Voice)
+        {
+            owner.setPresetFavorite(owner.getCurrentPatchName(), favouriteToggle.getToggleState());
+            lcdLine.setText(owner.getCurrentPatchName() + " favorite metadata saved", juce::dontSendNotification);
+        }
         else
             lcdLine.setText(pageName(activePage) + " edit focus", juce::dontSendNotification);
         refreshPageSurface();
@@ -523,6 +545,22 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
             const auto result = owner.bounceDemoToWav(file, 8.0);
             lcdLine.setText(result.wasOk() ? "WAV bounced: " + file.getFileName() : result.getErrorMessage(), juce::dontSendNotification);
         }
+        else if (activePage == WorkstationPage::Performance)
+        {
+            owner.storePerformance(performanceBrowserBox.getSelectedId() - 1, performanceBrowserBox.getText());
+            lcdLine.setText("Performance stored: " + performanceBrowserBox.getText(), juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Arp)
+        {
+            owner.assignArpToLane(1, 0);
+            lcdLine.setText("User arp assigned to lane 2", juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Sample)
+        {
+            owner.mapDrumKey(36, "Kick", 1);
+            owner.setDrumKitModeEnabled(true);
+            lcdLine.setText("Drum key C1 mapped and drum mode enabled", juce::dontSendNotification);
+        }
         else
             lcdLine.setText(pageName(activePage) + " secondary command", juce::dontSendNotification);
         refreshPageSurface();
@@ -530,7 +568,7 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
 
     pageActionButtons[2]->onClick = [this]
     {
-        if (activePage == WorkstationPage::Song || activePage == WorkstationPage::Demo)
+        if (activePage == WorkstationPage::Demo)
         {
             owner.resetSequencerPlayback();
             lcdLine.setText("Sequencer reset", juce::dontSendNotification);
@@ -540,6 +578,18 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
             owner.setPerformanceModeEnabled(!owner.isPerformanceModeEnabled());
             lcdLine.setText(owner.isPerformanceModeEnabled() ? "Performance mode enabled" : "Performance mode disabled",
                             juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Song)
+        {
+            owner.setLiveRecordingEnabled(!owner.isLiveRecordingEnabled(), true, false);
+            lcdLine.setText(owner.isLiveRecordingEnabled() ? "Live recording enabled" : "Live recording disabled",
+                            juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Arp)
+        {
+            owner.saveUserArp(1, "Phrase Arp");
+            owner.assignArpToLane(2, 1);
+            lcdLine.setText("Phrase arp assigned to lane 3", juce::dontSendNotification);
         }
         else
             lcdLine.setText(pageName(activePage) + " editor armed", juce::dontSendNotification);
@@ -556,6 +606,17 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
         }
         else if (activePage == WorkstationPage::Sample)
             lcdLine.setText("Sample manager ready for licensed library import", juce::dontSendNotification);
+        else if (activePage == WorkstationPage::Performance)
+        {
+            owner.captureSceneSnapshot(owner.getCurrentPerformanceScene(), "Front Panel Scene");
+            lcdLine.setText("Named scene snapshot captured", juce::dontSendNotification);
+        }
+        else if (activePage == WorkstationPage::Pattern)
+        {
+            owner.addPatternPhraseNote(1, 0, 120, 120, 67, 96, 1);
+            owner.assignPatternSection(1, 2);
+            lcdLine.setText("Pattern section B assigned to phrase 2", juce::dontSendNotification);
+        }
         else
             lcdLine.setText(pageName(activePage) + " workflow captured", juce::dontSendNotification);
         refreshPageSurface();
@@ -618,6 +679,9 @@ void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
                       "Current search: " });
             pageLabels[4]->setText("Current search: " + (query.isEmpty() ? juce::String("all voices") : query),
                                    juce::dontSendNotification);
+            pageLabels[5]->setText(owner.getPresetMetadataSummary(owner.getCurrentPatchName()), juce::dontSendNotification);
+            pageLabels[6]->setText(owner.getVoiceEditSummary(0), juce::dontSendNotification);
+            pageLabels[7]->setText(owner.getModMatrixSummary(0), juce::dontSendNotification);
             pageActionButtons[0]->setButtonText("Edit Voice");
             pageActionButtons[1]->setButtonText("Mod Matrix");
             pageActionButtons[2]->setButtonText("EG Detail");
@@ -630,6 +694,10 @@ void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
                       "Scene snapshots switch parts, arps, mixer, FX",
                       "Variation buttons are live and audio-safe",
                       "Performance mode follows the selected slot" });
+            pageLabels[5]->setText("Selected: " + owner.getPerformanceName(performanceBrowserBox.getSelectedId() - 1),
+                                   juce::dontSendNotification);
+            pageLabels[6]->setText("Scene: " + owner.getSceneName(owner.getCurrentPerformanceScene()),
+                                   juce::dontSendNotification);
             pageActionButtons[0]->setButtonText("Var 1");
             pageActionButtons[1]->setButtonText("Var 2");
             pageActionButtons[2]->setButtonText(owner.isPerformanceModeEnabled() ? "Perf Off" : "Perf On");
@@ -642,6 +710,9 @@ void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
                       "System chorus/reverb sends and master strip",
                       "Master EQ/compressor are automatable and saved",
                       "Audio input parts: reserved for hardware input integration" });
+            pageLabels[5]->setText("Meters L " + juce::String(owner.getOutputPeakLeft(), 3)
+                                       + " R " + juce::String(owner.getOutputPeakRight(), 3),
+                                   juce::dontSendNotification);
             pageActionButtons[0]->setButtonText("Part 1");
             pageActionButtons[1]->setButtonText("FX Rack");
             pageActionButtons[2]->setButtonText("Master");
@@ -654,6 +725,11 @@ void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
                       "Lane 2: UpDown/Chord scene switching",
                       "User phrase slots: 256 design target",
                       "Pattern editor surface ready for step editing" });
+            pageLabels[5]->setText("Assignments: L1 " + juce::String(owner.getArpLaneAssignment(0))
+                                       + " L2 " + juce::String(owner.getArpLaneAssignment(1))
+                                       + " L3 " + juce::String(owner.getArpLaneAssignment(2))
+                                       + " L4 " + juce::String(owner.getArpLaneAssignment(3)),
+                                   juce::dontSendNotification);
             pageActionButtons[0]->setButtonText("Lane 1");
             pageActionButtons[1]->setButtonText("Lane 2");
             pageActionButtons[2]->setButtonText("Phrase");
@@ -668,6 +744,8 @@ void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
                       "Current song note count:" });
             pageLabels[4]->setText("Current song note count: " + juce::String(owner.getCurrentSongNoteCount()),
                                    juce::dontSendNotification);
+            pageLabels[5]->setText(owner.isLiveRecordingEnabled() ? "Recording: overdub armed" : "Recording: off",
+                                   juce::dontSendNotification);
             pageActionButtons[0]->setButtonText("Seed Demo");
             pageActionButtons[1]->setButtonText(owner.isSequencerPlaybackEnabled() ? "Stop" : "Play");
             pageActionButtons[2]->setButtonText("Reset");
@@ -680,6 +758,9 @@ void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
                       "16 phrase tracks with measure length controls",
                       "Phrase/user arp editing bridge",
                       "Pattern chains reserved for song assembly" });
+            pageLabels[5]->setText("Section A phrase " + juce::String(owner.getPatternSectionPhrase(0))
+                                       + " notes " + juce::String(owner.getPatternSectionNoteCount(0)),
+                                   juce::dontSendNotification);
             pageActionButtons[0]->setButtonText("Section A");
             pageActionButtons[1]->setButtonText("Phrase");
             pageActionButtons[2]->setButtonText("Chain");
@@ -692,6 +773,9 @@ void ChimeraEngineAudioProcessorEditor::refreshPageSurface()
                       "Drum kit editor: 128 key map surface",
                       "Release samples and alternates tracked by patches",
                       "Licensed large library import remains the final content phase" });
+            pageLabels[5]->setText("Indexed samples: " + juce::String(owner.getIndexedSampleCount())
+                                       + "  Drum keys: " + juce::String(owner.getMappedDrumKeyCount()),
+                                   juce::dontSendNotification);
             pageActionButtons[0]->setButtonText("Import");
             pageActionButtons[1]->setButtonText("Map");
             pageActionButtons[2]->setButtonText("Drums");
