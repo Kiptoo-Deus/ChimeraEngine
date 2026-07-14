@@ -200,14 +200,67 @@ void ChimeraEngineAudioProcessor::changeProgramName(int, const juce::String&)
 
 void ChimeraEngineAudioProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
+    auto state = parameters.copyState();
+    state.setProperty("chimeraPerformanceMode", performanceModeEnabled, nullptr);
+    {
+        const juce::ScopedLock lock(zoneLock);
+        for (int part = 0; part < static_cast<int>(maxParts); ++part)
+            state.setProperty("chimeraPartPatch" + juce::String(part),
+                              parts[static_cast<size_t>(part)].patchName,
+                              nullptr);
+    }
+    for (int performancePart = 0; performancePart < chimera::engine::Performance::partCount; ++performancePart)
+    {
+        const auto& zone = activePerformance.getPart(performancePart);
+        const auto prefix = "chimeraPerfPart" + juce::String(performancePart);
+        state.setProperty(prefix + "Enabled", zone.enabled, nullptr);
+        state.setProperty(prefix + "KeyLow", zone.keyLow, nullptr);
+        state.setProperty(prefix + "KeyHigh", zone.keyHigh, nullptr);
+        state.setProperty(prefix + "VelocityLow", zone.velocityLow, nullptr);
+        state.setProperty(prefix + "VelocityHigh", zone.velocityHigh, nullptr);
+        state.setProperty(prefix + "MidiChannel", zone.midiChannel, nullptr);
+        state.setProperty(prefix + "InternalPart", zone.internalPartIndex, nullptr);
+        state.setProperty(prefix + "Level", zone.level, nullptr);
+        state.setProperty(prefix + "Pan", zone.pan, nullptr);
+        state.setProperty(prefix + "VoiceName", juce::String(zone.voiceName), nullptr);
+    }
+
     juce::MemoryOutputStream stream(destData, true);
-    parameters.state.writeToStream(stream);
+    state.writeToStream(stream);
 }
 
 void ChimeraEngineAudioProcessor::setStateInformation(const void* data, int sizeInBytes)
 {
     if (auto tree = juce::ValueTree::readFromData(data, static_cast<size_t>(sizeInBytes)); tree.isValid())
+    {
+        std::array<juce::String, maxParts> restoredPartPatches;
+        for (int part = 0; part < static_cast<int>(maxParts); ++part)
+            restoredPartPatches[static_cast<size_t>(part)] = tree.getProperty("chimeraPartPatch" + juce::String(part), {}).toString();
+
+        performanceModeEnabled = static_cast<bool>(tree.getProperty("chimeraPerformanceMode", false));
         parameters.replaceState(tree);
+
+        for (int part = 0; part < static_cast<int>(maxParts); ++part)
+            if (restoredPartPatches[static_cast<size_t>(part)].isNotEmpty())
+                ignoreUnused(loadSynthPresetForPart(part, restoredPartPatches[static_cast<size_t>(part)]));
+
+        for (int performancePart = 0; performancePart < chimera::engine::Performance::partCount; ++performancePart)
+        {
+            const auto prefix = "chimeraPerfPart" + juce::String(performancePart);
+            chimera::engine::PartZone zone;
+            zone.enabled = static_cast<bool>(tree.getProperty(prefix + "Enabled", false));
+            zone.keyLow = static_cast<int>(tree.getProperty(prefix + "KeyLow", 0));
+            zone.keyHigh = static_cast<int>(tree.getProperty(prefix + "KeyHigh", 127));
+            zone.velocityLow = static_cast<int>(tree.getProperty(prefix + "VelocityLow", 1));
+            zone.velocityHigh = static_cast<int>(tree.getProperty(prefix + "VelocityHigh", 127));
+            zone.midiChannel = static_cast<int>(tree.getProperty(prefix + "MidiChannel", 1));
+            zone.internalPartIndex = static_cast<int>(tree.getProperty(prefix + "InternalPart", performancePart));
+            zone.level = static_cast<float>(tree.getProperty(prefix + "Level", 1.0));
+            zone.pan = static_cast<float>(tree.getProperty(prefix + "Pan", 0.0));
+            zone.voiceName = tree.getProperty(prefix + "VoiceName", {}).toString().toStdString();
+            activePerformance.setPart(performancePart, std::move(zone));
+        }
+    }
 }
 
 void ChimeraEngineAudioProcessor::enqueuePreviewNoteOn(int midiChannel, int midiNote, float velocity)

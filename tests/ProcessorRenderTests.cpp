@@ -157,6 +157,23 @@ int main()
     upperPerformanceMidi.addEvent(juce::MidiMessage::noteOn(1, 72, juce::uint8(120)), 0);
     assert(renderAndSum(performanceProcessor, upperPerformanceMidi, 512) > 0.01f);
 
+    ChimeraEngineAudioProcessor stateSourceProcessor;
+    stateSourceProcessor.prepareToPlay(48000.0, 512);
+    assert(stateSourceProcessor.loadSynthPresetForPart(1, "Stack").wasOk());
+    stateSourceProcessor.setPerformancePart(0, { 0, 127, 1, 127, 2, true, 1, 1.0f, 0.0f, "Restored Part" });
+    stateSourceProcessor.setPerformanceModeEnabled(true);
+    juce::MemoryBlock stateData;
+    stateSourceProcessor.getStateInformation(stateData);
+
+    ChimeraEngineAudioProcessor restoredStateProcessor;
+    restoredStateProcessor.prepareToPlay(48000.0, 512);
+    restoredStateProcessor.setStateInformation(stateData.getData(), static_cast<int>(stateData.getSize()));
+    assert(restoredStateProcessor.isPerformanceModeEnabled());
+    assert(restoredStateProcessor.getPartPatchName(1) == "Stack");
+    juce::MidiBuffer restoredPartMidi;
+    restoredPartMidi.addEvent(juce::MidiMessage::noteOn(2, 60, juce::uint8(100)), 0);
+    assert(renderAndSum(restoredStateProcessor, restoredPartMidi, 512) > 0.01f);
+
     std::cout << "Processor render test passed\n";
     return 0;
 }
