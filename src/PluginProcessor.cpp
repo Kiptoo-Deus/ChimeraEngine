@@ -144,6 +144,7 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
 {
     currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
     voiceAgeCounter = 0;
+    sequencerTick = 0.0;
     lastMonoNotes.fill(-1);
     pitchBendSemitones.fill(0.0f);
     modWheelValues.fill(0.0f);
@@ -154,6 +155,8 @@ void ChimeraEngineAudioProcessor::prepareToPlay(double sampleRate, int)
     heldArpeggiatorNotes.clear();
     activeArpeggiatorNotes.clear();
     arpeggiator.setMode(chimera::engine::ArpMode::Up);
+    if (!sequencerDemoSeeded)
+        seedDemoSequence();
 
     for (auto& voice : voices)
     {
@@ -222,6 +225,7 @@ void ChimeraEngineAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         mergedMidi.swapWith(pendingPreviewMidi);
     }
     mergedMidi.addEvents(midiMessages, 0, buffer.getNumSamples(), 0);
+    addSequencerEventsForBlock(mergedMidi, buffer.getNumSamples());
 
     auto midiIterator = mergedMidi.cbegin();
     const auto midiEnd = mergedMidi.cend();
@@ -319,6 +323,8 @@ void ChimeraEngineAudioProcessor::getStateInformation(juce::MemoryBlock& destDat
                           nullptr);
     state.setProperty("chimeraFxChorusSend", chorusSend, nullptr);
     state.setProperty("chimeraFxReverbSend", reverbSend, nullptr);
+    state.setProperty("chimeraSequencerPlayback", sequencerPlaybackEnabled, nullptr);
+    state.setProperty("chimeraSequencerTick", sequencerTick, nullptr);
 
     juce::MemoryOutputStream stream(destData, true);
     state.writeToStream(stream);
@@ -377,6 +383,8 @@ void ChimeraEngineAudioProcessor::setStateInformation(const void* data, int size
         }
         setSystemFxSends(static_cast<float>(tree.getProperty("chimeraFxChorusSend", 0.18)),
                          static_cast<float>(tree.getProperty("chimeraFxReverbSend", 0.16)));
+        sequencerPlaybackEnabled = static_cast<bool>(tree.getProperty("chimeraSequencerPlayback", false));
+        sequencerTick = static_cast<double>(tree.getProperty("chimeraSequencerTick", 0.0));
     }
 }
 
@@ -490,6 +498,52 @@ void ChimeraEngineAudioProcessor::setSystemFxSends(float newChorusSend, float ne
 void ChimeraEngineAudioProcessor::setPerformanceModeEnabled(bool shouldBeEnabled)
 {
     performanceModeEnabled = shouldBeEnabled;
+}
+
+void ChimeraEngineAudioProcessor::setSequencerPlaybackEnabled(bool shouldPlay)
+{
+    if (!sequencerDemoSeeded)
+        seedDemoSequence();
+
+    sequencerPlaybackEnabled = shouldPlay;
+}
+
+void ChimeraEngineAudioProcessor::resetSequencerPlayback()
+{
+    sequencerTick = 0.0;
+    stopActiveArpeggiatorNotes();
+    for (auto& voice : voices)
+        if (voice.active)
+            releaseVoice(voice);
+}
+
+void ChimeraEngineAudioProcessor::seedDemoSequence()
+{
+    auto& song = sequencer.song(0);
+    for (int track = 0; track < chimera::engine::Song::trackCount; ++track)
+        song.clearTrack(track);
+
+    song.setTempo(118.0);
+    ignoreUnused(loadSynthPresetForPart(0, "Expressive Mono"));
+    ignoreUnused(loadSynthPresetForPart(1, "Stack"));
+    setPartMix(0, 0.9f, -0.15f, true);
+    setPartMix(1, 0.65f, 0.2f, true);
+
+    constexpr int q = chimera::engine::Song::ppq;
+    for (int bar = 0; bar < 2; ++bar)
+    {
+        const auto base = bar * q * 4;
+        song.recordNote(0, base + 0 * q, q / 2, 48, 105, 1);
+        song.recordNote(0, base + 1 * q, q / 2, 55, 100, 1);
+        song.recordNote(0, base + 2 * q, q / 2, 60, 108, 1);
+        song.recordNote(0, base + 3 * q, q / 2, 55, 96, 1);
+
+        song.recordNote(1, base + 0 * q, q * 2, 72, 88, 2);
+        song.recordNote(1, base + 2 * q, q * 2, 76, 84, 2);
+    }
+    song.addSceneEvent({ 0, 0 });
+    song.addSceneEvent({ q * 4, 1 });
+    sequencerDemoSeeded = true;
 }
 
 void ChimeraEngineAudioProcessor::setPerformancePart(int performancePartIndex, chimera::engine::PartZone zone)
@@ -990,6 +1044,61 @@ void ChimeraEngineAudioProcessor::applyFxConfiguration(bool resetFx)
         if (resetFx)
             fx.reset();
     }
+}
+
+int ChimeraEngineAudioProcessor::sequencerLoopEndTick() const
+{
+    auto endTick = chimera::engine::Song::ppq * 8;
+    const auto& song = sequencer.song(0);
+    for (int track = 0; track < chimera::engine::Song::trackCount; ++track)
+        for (const auto& note : song.track(track).getNotes())
+            endTick = std::max(endTick, note.tick + note.durationTicks);
+
+    return endTick;
+}
+
+void ChimeraEngineAudioProcessor::addSequencerEventsForBlock(juce::MidiBuffer& midi, int numSamples)
+{
+    if (!sequencerPlaybackEnabled || numSamples <= 0)
+        return;
+
+    if (!sequencerDemoSeeded)
+        seedDemoSequence();
+
+    const auto& song = sequencer.song(0);
+    const auto ticksPerSample = song.getTempo() * static_cast<double>(chimera::engine::Song::ppq)
+        / (60.0 * std::max(1.0, currentSampleRate));
+    const auto loopEnd = sequencerLoopEndTick();
+    const auto startTick = static_cast<int>(std::floor(sequencerTick));
+    const auto endTick = static_cast<int>(std::ceil(sequencerTick + ticksPerSample * static_cast<double>(numSamples)));
+
+    auto addEventsInRange = [&midi, &song, numSamples, ticksPerSample](int rangeStart, int rangeEnd, int tickOffset)
+    {
+        const auto events = song.collectPlaybackEvents(rangeStart, rangeEnd);
+        for (const auto& event : events)
+        {
+            const auto relativeTick = static_cast<double>(event.tick - rangeStart + tickOffset);
+            const auto sample = std::clamp(static_cast<int>(std::round(relativeTick / ticksPerSample)), 0, std::max(0, numSamples - 1));
+            const auto channel = std::clamp(event.note.channel, 1, 16);
+            const auto message = event.noteOn
+                ? juce::MidiMessage::noteOn(channel, event.note.note, juce::uint8(event.note.velocity))
+                : juce::MidiMessage::noteOff(channel, event.note.note);
+            midi.addEvent(message, sample);
+        }
+    };
+
+    if (endTick < loopEnd)
+    {
+        addEventsInRange(startTick, endTick, 0);
+        sequencerTick += ticksPerSample * static_cast<double>(numSamples);
+        return;
+    }
+
+    addEventsInRange(startTick, loopEnd, 0);
+    const auto wrappedEnd = endTick % loopEnd;
+    addEventsInRange(0, wrappedEnd, loopEnd - startTick);
+    sequencerTick = std::fmod(sequencerTick + ticksPerSample * static_cast<double>(numSamples),
+                              static_cast<double>(loopEnd));
 }
 
 ChimeraEngineAudioProcessor::StereoSample ChimeraEngineAudioProcessor::renderVoiceSample()

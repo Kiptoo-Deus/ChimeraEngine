@@ -115,6 +115,7 @@ ChimeraEngineAudioProcessorEditor::ChimeraEngineAudioProcessorEditor(ChimeraEngi
     arpToggle.setButtonText("ARP ON");
     addAndMakeVisible(arpToggle);
     buttonAttachments.add(new ButtonAttachment(owner.getParameters(), "arpEnabled", arpToggle));
+    addTransportControls();
 
     addFxControls();
 
@@ -254,9 +255,13 @@ void ChimeraEngineAudioProcessorEditor::resized()
     }
 
     auto arpArea = performanceBounds.reduced(18, 38);
-    sliders[6]->setBounds(arpArea.removeFromTop(124).withWidth(116));
+    sliders[6]->setBounds(arpArea.removeFromTop(86).withWidth(116));
     arpArea.removeFromTop(8);
     arpToggle.setBounds(arpArea.removeFromTop(30));
+    arpArea.removeFromTop(8);
+    fitRow({ &demoSequenceButton, &sequencerPlayButton, &sequencerResetButton }, arpArea.removeFromTop(28), 5);
+    arpArea.removeFromTop(4);
+    sequencerTickLabel.setBounds(arpArea.removeFromTop(22));
 
     auto monitor = elementMonitorBounds.reduced(16, 34);
     for (int i = 0; i < labels.size(); ++i)
@@ -460,6 +465,47 @@ void ChimeraEngineAudioProcessorEditor::refreshFxControls()
         fxSendSliders[1]->setValue(owner.getReverbSend(), juce::dontSendNotification);
 }
 
+void ChimeraEngineAudioProcessorEditor::addTransportControls()
+{
+    demoSequenceButton.onClick = [this]
+    {
+        owner.seedDemoSequence();
+        owner.resetSequencerPlayback();
+        owner.setSequencerPlaybackEnabled(true);
+        lcdLine.setText("Demo sequence armed and playing", juce::dontSendNotification);
+        refreshTransportControls();
+    };
+    addAndMakeVisible(demoSequenceButton);
+
+    sequencerPlayButton.onClick = [this]
+    {
+        owner.setSequencerPlaybackEnabled(!owner.isSequencerPlaybackEnabled());
+        lcdLine.setText(owner.isSequencerPlaybackEnabled() ? "Sequencer playing" : "Sequencer stopped",
+                        juce::dontSendNotification);
+        refreshTransportControls();
+    };
+    addAndMakeVisible(sequencerPlayButton);
+
+    sequencerResetButton.onClick = [this]
+    {
+        owner.resetSequencerPlayback();
+        lcdLine.setText("Sequencer reset", juce::dontSendNotification);
+        refreshTransportControls();
+    };
+    addAndMakeVisible(sequencerResetButton);
+
+    sequencerTickLabel.setJustificationType(juce::Justification::centredLeft);
+    sequencerTickLabel.setColour(juce::Label::textColourId, juce::Colour(0xffc7d2dc));
+    addAndMakeVisible(sequencerTickLabel);
+    refreshTransportControls();
+}
+
+void ChimeraEngineAudioProcessorEditor::refreshTransportControls()
+{
+    sequencerPlayButton.setButtonText(owner.isSequencerPlaybackEnabled() ? "Stop" : "Play");
+    sequencerTickLabel.setText("SEQ TICK " + juce::String(owner.getSequencerTick()), juce::dontSendNotification);
+}
+
 void ChimeraEngineAudioProcessorEditor::drawPanel(juce::Graphics& g, PanelId panel, const juce::String& panelTitle)
 {
     const auto bounds = [this, panel]
@@ -524,4 +570,5 @@ void ChimeraEngineAudioProcessorEditor::timerCallback()
     updateDisplay();
     refreshPartMixerControls();
     refreshFxControls();
+    refreshTransportControls();
 }

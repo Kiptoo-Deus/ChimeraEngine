@@ -69,6 +69,20 @@ int main()
     assert(configuredFxSum > 0.01f);
     assert(std::isfinite(configuredFxSum));
 
+    ChimeraEngineAudioProcessor sequencerProcessor;
+    sequencerProcessor.prepareToPlay(48000.0, 512);
+    sequencerProcessor.setSequencerPlaybackEnabled(true);
+    auto sequencerSum = 0.0f;
+    for (int block = 0; block < 12; ++block)
+    {
+        juce::MidiBuffer sequencerMidi;
+        sequencerSum += renderAndSum(sequencerProcessor, sequencerMidi, 512);
+    }
+    assert(sequencerSum > 0.01f);
+    assert(sequencerProcessor.getSequencerTick() > 0);
+    sequencerProcessor.resetSequencerPlayback();
+    assert(sequencerProcessor.getSequencerTick() == 0);
+
     juce::MidiBuffer chord;
     chord.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
     chord.addEvent(juce::MidiMessage::noteOn(1, 64, juce::uint8(100)), 0);

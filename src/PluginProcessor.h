@@ -9,6 +9,7 @@
 #include "dsp/SampleZone.h"
 #include "engine/Arpeggiator.h"
 #include "engine/Performance.h"
+#include "engine/Sequencer.h"
 #include "fx/FxChain.h"
 #include <array>
 #include <memory>
@@ -62,6 +63,11 @@ public:
     void setPerformanceModeEnabled(bool shouldBeEnabled);
     bool isPerformanceModeEnabled() const { return performanceModeEnabled; }
     void setPerformancePart(int performancePartIndex, chimera::engine::PartZone zone);
+    void setSequencerPlaybackEnabled(bool shouldPlay);
+    bool isSequencerPlaybackEnabled() const { return sequencerPlaybackEnabled; }
+    void resetSequencerPlayback();
+    void seedDemoSequence();
+    int getSequencerTick() const { return static_cast<int>(sequencerTick); }
     static constexpr int getPartCount() { return static_cast<int>(maxParts); }
     static constexpr int getMaxVoiceCount() { return static_cast<int>(maxVoices); }
 
@@ -186,6 +192,8 @@ private:
     void refreshArpeggiatorHeldNotes();
     void stopActiveArpeggiatorNotes();
     void applyFxConfiguration(bool resetFx);
+    void addSequencerEventsForBlock(juce::MidiBuffer& midi, int numSamples);
+    int sequencerLoopEndTick() const;
     StereoSample renderVoiceSample();
 
     juce::AudioProcessorValueTreeState parameters;
@@ -201,6 +209,7 @@ private:
     std::array<ActiveVoice, maxVoices> voices;
     chimera::engine::Arpeggiator arpeggiator;
     chimera::engine::Performance activePerformance;
+    chimera::engine::Sequencer sequencer;
     std::array<chimera::fx::WorkstationFx, 2> workstationFx;
     std::array<chimera::fx::EffectType, chimera::fx::InsertRack::slotCount> insertEffects {};
     std::vector<HeldArpeggiatorNote> heldArpeggiatorNotes;
@@ -212,6 +221,9 @@ private:
     int arpeggiatorSamplesUntilGate = 0;
     float chorusSend = 0.18f;
     float reverbSend = 0.16f;
+    double sequencerTick = 0.0;
+    bool sequencerPlaybackEnabled = false;
+    bool sequencerDemoSeeded = false;
     bool arpeggiatorWasEnabled = false;
     bool performanceModeEnabled = false;
 };
