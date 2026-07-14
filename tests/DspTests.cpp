@@ -6,6 +6,7 @@
 #include "dsp/SamplePlayer.h"
 #include "dsp/SampleZone.h"
 #include "engine/Arpeggiator.h"
+#include "engine/DrumKit.h"
 #include "engine/Performance.h"
 #include "engine/SampleLibrary.h"
 #include "engine/Sequencer.h"
@@ -220,6 +221,27 @@ void testArpeggiator()
     assert(arp.tick()[0] == 64);
     assert(arp.tick()[0] == 67);
     assert(arp.tick()[0] == 64);
+}
+
+void testDrumKit()
+{
+    static_assert(chimera::engine::DrumKit::keyCount == 128);
+
+    chimera::engine::DrumKit kit;
+    assert(kit.setKey({ 36, 1001, "Kick", 1.2f, 0.0f, 0, false, 0 }));
+    assert(kit.setKey({ 38, 1002, "Snare", 1.0f, -2.0f, 20, true, 1 }));
+    assert(!kit.setKey({ 128, 1003, "Invalid", 1.0f, 0.0f, 0, false, 0 }));
+    assert(!kit.setKey({ 40, 0, "No Wave", 1.0f, 0.0f, 0, false, 0 }));
+    assert(kit.mappedKeyCount() == 2);
+    assert(kit.hasKey(36));
+    assert(!kit.hasKey(37));
+
+    const auto snare = kit.getKey(38);
+    assert(snare.has_value());
+    assert(snare->pan == -1.0f);
+    assert(snare->outputBus == 15);
+    assert(snare->chokeGroupEnabled);
+    assert(snare->chokeGroup == 1);
 }
 
 void testPerformance()
@@ -479,6 +501,7 @@ int main()
     testModulationMatrix();
     testElement();
     testArpeggiator();
+    testDrumKit();
     testPerformance();
     testSequencer();
     testFxProcessors();
