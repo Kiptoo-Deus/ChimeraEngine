@@ -235,4 +235,4 @@ add_test(NAME ChimeraEngineSourcePresetGeneration
                  ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_source_presets.py
                  --project-root ${CMAKE_CURRENT_SOURCE_DIR}
                  --index ${CHIMERA_SAMPLE_SOURCE_INDEX}
-                 --output-dir ${CMAKE_CURRENT_SOURCE_DIR}/presets/Source)
+                 --output-dir ${CMAKE_CURRENT_BINARY_DIR}/sample_sources/test-source-presets)
