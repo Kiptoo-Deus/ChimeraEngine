@@ -551,7 +551,18 @@ juce::Result ChimeraEngineAudioProcessor::loadDefaultPatch()
 
 juce::Result ChimeraEngineAudioProcessor::loadSynthPreset(const juce::String& presetName)
 {
-    return loadSynthPresetForPart(0, presetName);
+    const auto result = loadSynthPresetForPart(0, presetName);
+    if (result.wasOk())
+    {
+        performanceModeEnabled = false;
+        drumKitModeEnabled = false;
+        stopAllActiveArpeggiatorNotes();
+        for (auto& voice : voices)
+            if (voice.active)
+                releaseVoice(voice);
+    }
+
+    return result;
 }
 
 juce::Result ChimeraEngineAudioProcessor::loadSynthPresetForPart(int partIndex, const juce::String& presetName)

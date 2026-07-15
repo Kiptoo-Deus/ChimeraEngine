@@ -246,6 +246,17 @@ static void runChordPreviewPresetTests()
     assert(renderAndSum(presetProcessor, stackMidi, 512) > 0.01f);
     assert(presetProcessor.loadSynthPreset("Velocity Split").wasOk());
     assert(presetProcessor.getCurrentPatchName() == "Velocity Split");
+
+    if (presetProcessor.getAvailablePresetNames().contains("Salamander Grand Piano"))
+    {
+        presetProcessor.setPerformanceModeEnabled(true);
+        assert(presetProcessor.loadSynthPreset("Salamander Grand Piano").wasOk());
+        assert(!presetProcessor.isPerformanceModeEnabled());
+        assert(presetProcessor.getCurrentPatchName() == "Salamander Grand Piano");
+        juce::MidiBuffer salamanderMidi;
+        salamanderMidi.addEvent(juce::MidiMessage::noteOn(1, 60, juce::uint8(100)), 0);
+        assert(renderAndSum(presetProcessor, salamanderMidi, 512) > 0.01f);
+    }
 }
 
 static void runExpressionTests()
