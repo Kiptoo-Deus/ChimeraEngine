@@ -32,6 +32,16 @@ def main() -> int:
         print("Missing build artefacts: " + ", ".join(missing), file=sys.stderr)
         return 1
 
+    sample_source_indexes = list(artefacts.rglob("ChimeraSampleSources/chimera_sample_sources.json"))
+    if not sample_source_indexes:
+        print("Missing bundled Chimera sample source catalog", file=sys.stderr)
+        return 1
+
+    sample_source_manifests = list(artefacts.rglob("ChimeraSampleSources/manifest.csv"))
+    if not sample_source_manifests:
+        print("Missing bundled Chimera sample source manifest", file=sys.stderr)
+        return 1
+
     return 0
 
 

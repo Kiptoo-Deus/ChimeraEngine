@@ -76,6 +76,49 @@ target_link_libraries(ChimeraEngine
         juce::juce_recommended_warning_flags
 )
 
+set(CHIMERA_SAMPLE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/sample_sources")
+set(CHIMERA_SAMPLE_SOURCE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/sample_sources")
+set(CHIMERA_SAMPLE_SOURCE_INDEX "${CHIMERA_SAMPLE_SOURCE_BUILD_DIR}/chimera_sample_sources.json")
+set(CHIMERA_SAMPLE_SOURCE_MANIFEST "${CHIMERA_SAMPLE_SOURCE_BUILD_DIR}/manifest.csv")
+
+add_custom_command(
+    OUTPUT "${CHIMERA_SAMPLE_SOURCE_INDEX}"
+    COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_CURRENT_SOURCE_DIR}/scripts/integrate_sample_sources.py"
+            --source-root "${CHIMERA_SAMPLE_SOURCE_DIR}"
+            --output "${CHIMERA_SAMPLE_SOURCE_INDEX}"
+    DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/integrate_sample_sources.py"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMENT "Indexing approved local sample sources"
+    VERBATIM
+)
+
+add_custom_target(ChimeraEngineSampleSourceIndex ALL
+    DEPENDS "${CHIMERA_SAMPLE_SOURCE_INDEX}"
+)
+
+function(chimera_attach_sample_source_index target_name)
+    if(TARGET ${target_name})
+        add_dependencies(${target_name} ChimeraEngineSampleSourceIndex)
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory
+                    "$<TARGET_BUNDLE_DIR:${target_name}>/Contents/Resources/ChimeraSampleSources"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${CHIMERA_SAMPLE_SOURCE_INDEX}"
+                    "$<TARGET_BUNDLE_DIR:${target_name}>/Contents/Resources/ChimeraSampleSources/chimera_sample_sources.json"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${CHIMERA_SAMPLE_SOURCE_MANIFEST}"
+                    "$<TARGET_BUNDLE_DIR:${target_name}>/Contents/Resources/ChimeraSampleSources/manifest.csv"
+            COMMENT "Bundling Chimera sample source catalog for ${target_name}"
+            VERBATIM
+        )
+    endif()
+endfunction()
+
+chimera_attach_sample_source_index(ChimeraEngine_Standalone)
+chimera_attach_sample_source_index(ChimeraEngine_VST3)
+chimera_attach_sample_source_index(ChimeraEngine_AU)
+
 enable_testing()
 
 add_executable(ChimeraEngineTests
@@ -155,3 +198,10 @@ add_test(NAME ChimeraEnginePresetValidation
 add_test(NAME ChimeraEngineBuildArtifactValidation
          COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/validate_build_artifacts.py
                  ${CMAKE_CURRENT_BINARY_DIR})
+
+add_test(NAME ChimeraEngineSampleSourceIntegration
+         COMMAND ${Python3_EXECUTABLE}
+                 ${CMAKE_CURRENT_SOURCE_DIR}/scripts/integrate_sample_sources.py
+                 --source-root ${CMAKE_CURRENT_SOURCE_DIR}/sample_sources
+                 --output ${CMAKE_CURRENT_BINARY_DIR}/sample_sources/test-chimera-sample-sources.json
+                 --strict)
