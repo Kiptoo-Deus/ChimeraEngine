@@ -835,34 +835,50 @@ void ChimeraEngineAudioProcessorEditor::paint(juce::Graphics& g)
 void ChimeraEngineAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds().reduced(24);
-    headerBounds = area.removeFromTop(70);
-    area.removeFromTop(12);
 
-    auto upper = area.removeFromTop(160);
+    const auto keyboardHeight = std::clamp(getHeight() / 9, 88, 120);
+    auto keyboardArea = area.removeFromBottom(keyboardHeight);
+    keyboard.setBounds(keyboardArea.reduced(8, 8));
+    area.removeFromBottom(std::min(12, area.getHeight() / 35));
+
+    const auto remainingHeight = area.getHeight();
+    const auto headerHeight = std::clamp(remainingHeight / 10, 56, 70);
+    const auto upperHeight = std::clamp(remainingHeight / 5, 116, 160);
+    const auto toneHeight = std::clamp(remainingHeight / 6, 108, 170);
+    const auto mixerHeight = std::clamp(remainingHeight / 7, 84, 150);
+    const auto gap = std::clamp(remainingHeight / 70, 8, 14);
+
+    headerBounds = area.removeFromTop(headerHeight);
+    area.removeFromTop(gap);
+
+    auto upper = area.removeFromTop(std::min(upperHeight, area.getHeight()));
     displayBounds = upper.removeFromLeft(520);
     upper.removeFromLeft(16);
-    modeBounds = upper.removeFromTop(70);
-    upper.removeFromTop(12);
+    modeBounds = upper.removeFromTop(std::min(70, upper.getHeight() / 2));
+    upper.removeFromTop(std::min(12, upper.getHeight()));
     presetBounds = upper;
 
-    area.removeFromTop(14);
-    toneBounds = area.removeFromTop(170);
+    area.removeFromTop(gap);
+    toneBounds = area.removeFromTop(std::min(toneHeight, area.getHeight()));
     envelopeBounds = {};
 
-    area.removeFromTop(14);
-    auto middle = area.removeFromTop(360);
-    auto rightColumn = middle.removeFromRight(370);
-    middle.removeFromRight(18);
+    area.removeFromTop(gap);
+    auto middle = area;
+    const auto reservedMixer = std::min(mixerHeight + gap, middle.getHeight());
+    if (middle.getHeight() > reservedMixer)
+        middle.removeFromBottom(reservedMixer);
+    auto rightColumn = middle.removeFromRight(std::min(370, middle.getWidth() / 3));
+    middle.removeFromRight(std::min(18, middle.getWidth()));
     elementMonitorBounds = middle;
 
-    effectsBounds = rightColumn.removeFromTop(238);
-    rightColumn.removeFromTop(14);
+    effectsBounds = rightColumn.removeFromTop(std::clamp(rightColumn.getHeight() * 2 / 3, 126, 238));
+    rightColumn.removeFromTop(std::min(gap, rightColumn.getHeight()));
     performanceBounds = rightColumn;
 
-    area.removeFromTop(14);
-    mixerBounds = area.removeFromTop(150);
-    area.removeFromTop(12);
-    keyboard.setBounds(area.reduced(8, 8));
+    area = getLocalBounds().reduced(24);
+    area.removeFromBottom(keyboardHeight + std::min(12, area.getHeight() / 35));
+    const auto mixerY = std::max(performanceBounds.getBottom() + gap, keyboard.getY() - gap - mixerHeight);
+    mixerBounds = juce::Rectangle<int>(area.getX(), mixerY, area.getWidth(), std::max(72, keyboard.getY() - gap - mixerY));
 
     title.setBounds(headerBounds.reduced(22, 8).removeFromLeft(520));
     subtitle.setBounds(headerBounds.reduced(22, 8).removeFromRight(520));

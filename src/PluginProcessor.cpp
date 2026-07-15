@@ -436,6 +436,9 @@ void ChimeraEngineAudioProcessor::setStateInformation(const void* data, int size
 
         performanceModeEnabled = static_cast<bool>(tree.getProperty("chimeraPerformanceMode", false));
         parameters.replaceState(tree);
+        if (auto* master = dynamic_cast<juce::AudioParameterFloat*>(parameters.getParameter("masterGain"));
+            master != nullptr && master->get() <= -59.0f)
+            master->setValueNotifyingHost(master->convertTo0to1(-12.0f));
 
         for (int part = 0; part < static_cast<int>(maxParts); ++part)
             if (restoredPartPatches[static_cast<size_t>(part)].isNotEmpty())
