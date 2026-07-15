@@ -80,6 +80,8 @@ set(CHIMERA_SAMPLE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/sample_sources")
 set(CHIMERA_SAMPLE_SOURCE_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}/sample_sources")
 set(CHIMERA_SAMPLE_SOURCE_INDEX "${CHIMERA_SAMPLE_SOURCE_BUILD_DIR}/chimera_sample_sources.json")
 set(CHIMERA_SAMPLE_SOURCE_MANIFEST "${CHIMERA_SAMPLE_SOURCE_BUILD_DIR}/manifest.csv")
+set(CHIMERA_SOURCE_PRESET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/presets/Source")
+set(CHIMERA_SOURCE_PRESET_STAMP "${CMAKE_CURRENT_BINARY_DIR}/sample_sources/source-presets.stamp")
 
 add_custom_command(
     OUTPUT "${CHIMERA_SAMPLE_SOURCE_INDEX}"
@@ -96,6 +98,28 @@ add_custom_command(
 add_custom_target(ChimeraEngineSampleSourceIndex ALL
     DEPENDS "${CHIMERA_SAMPLE_SOURCE_INDEX}"
 )
+
+add_custom_command(
+    OUTPUT "${CHIMERA_SOURCE_PRESET_STAMP}"
+    COMMAND ${Python3_EXECUTABLE}
+            "${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_source_presets.py"
+            --project-root "${CMAKE_CURRENT_SOURCE_DIR}"
+            --index "${CHIMERA_SAMPLE_SOURCE_INDEX}"
+            --output-dir "${CHIMERA_SOURCE_PRESET_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E touch "${CHIMERA_SOURCE_PRESET_STAMP}"
+    DEPENDS
+            "${CHIMERA_SAMPLE_SOURCE_INDEX}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_source_presets.py"
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    COMMENT "Generating playable presets from approved sample sources"
+    VERBATIM
+)
+
+add_custom_target(ChimeraEngineSourcePresets ALL
+    DEPENDS "${CHIMERA_SOURCE_PRESET_STAMP}"
+)
+
+add_dependencies(ChimeraEngine ChimeraEngineSourcePresets)
 
 function(chimera_attach_sample_source_index target_name)
     if(TARGET ${target_name})
@@ -205,3 +229,10 @@ add_test(NAME ChimeraEngineSampleSourceIntegration
                  --source-root ${CMAKE_CURRENT_SOURCE_DIR}/sample_sources
                  --output ${CMAKE_CURRENT_BINARY_DIR}/sample_sources/test-chimera-sample-sources.json
                  --strict)
+
+add_test(NAME ChimeraEngineSourcePresetGeneration
+         COMMAND ${Python3_EXECUTABLE}
+                 ${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_source_presets.py
+                 --project-root ${CMAKE_CURRENT_SOURCE_DIR}
+                 --index ${CHIMERA_SAMPLE_SOURCE_INDEX}
+                 --output-dir ${CMAKE_CURRENT_SOURCE_DIR}/presets/Source)

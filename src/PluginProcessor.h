@@ -54,6 +54,7 @@ public:
     void enqueuePreviewNoteOff(int midiChannel, int midiNote);
     juce::Result loadSynthPreset(const juce::String& presetName);
     juce::Result loadSynthPresetForPart(int partIndex, const juce::String& presetName);
+    juce::StringArray getAvailablePresetNames() const;
     juce::String getCurrentPatchName() const { return currentPatchName; }
     juce::String getPartPatchName(int partIndex) const;
     void setPartMix(int partIndex, float level, float pan, bool enabled);

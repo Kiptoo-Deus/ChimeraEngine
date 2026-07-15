@@ -21,6 +21,27 @@ juce::File projectRoot()
    #endif
 }
 
+std::array<juce::File, 2> presetDirectories()
+{
+    const auto root = projectRoot().getChildFile("presets");
+    return { root.getChildFile("Synth"), root.getChildFile("Source") };
+}
+
+juce::File findPresetFile(const juce::String& presetName)
+{
+    if (!presetName.containsOnly("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 _-"))
+        return {};
+
+    for (const auto& directory : presetDirectories())
+    {
+        const auto file = directory.getChildFile(presetName + ".chpatch");
+        if (file.existsAsFile())
+            return file;
+    }
+
+    return {};
+}
+
 float dbToGain(float db)
 {
     return std::pow(10.0f, db / 20.0f);
@@ -537,7 +558,27 @@ juce::Result ChimeraEngineAudioProcessor::loadSynthPresetForPart(int partIndex, 
     if (partIndex < 0 || partIndex >= static_cast<int>(maxParts))
         return juce::Result::fail("Part index is out of range");
 
-    return loadPatchFileForPart(partIndex, projectRoot().getChildFile("presets/Synth").getChildFile(presetName + ".chpatch"));
+    const auto patchFile = findPresetFile(presetName);
+    if (patchFile == juce::File())
+        return juce::Result::fail("Preset not found: " + presetName);
+
+    return loadPatchFileForPart(partIndex, patchFile);
+}
+
+juce::StringArray ChimeraEngineAudioProcessor::getAvailablePresetNames() const
+{
+    juce::StringArray names;
+    for (const auto& directory : presetDirectories())
+    {
+        if (!directory.isDirectory())
+            continue;
+
+        for (const auto& entry : juce::RangedDirectoryIterator(directory, false, "*.chpatch", juce::File::findFiles))
+            names.addIfNotAlreadyThere(entry.getFile().getFileNameWithoutExtension());
+    }
+
+    names.sort(true);
+    return names;
 }
 
 juce::String ChimeraEngineAudioProcessor::getPartPatchName(int partIndex) const
@@ -1140,7 +1181,10 @@ bool ChimeraEngineAudioProcessor::isPresetFavorite(const juce::String& presetNam
 juce::String ChimeraEngineAudioProcessor::getPresetMetadataSummary(const juce::String& presetName) const
 {
     chimera::preset::Patch patch;
-    const auto file = projectRoot().getChildFile("presets/Synth").getChildFile(presetName + ".chpatch");
+    const auto file = findPresetFile(presetName);
+    if (file == juce::File())
+        return "Preset metadata unavailable";
+
     if (chimera::preset::loadPatch(file, patch).failed())
         return "Preset metadata unavailable";
 
@@ -1250,7 +1294,10 @@ juce::Result ChimeraEngineAudioProcessor::writeCurrentPatchEdit(const juce::File
         return juce::Result::fail("No patch writeback file selected");
 
     chimera::preset::Patch patch;
-    const auto source = projectRoot().getChildFile("presets/Synth").getChildFile(currentPatchName + ".chpatch");
+    const auto source = findPresetFile(currentPatchName);
+    if (source == juce::File())
+        return juce::Result::fail("Current patch source is unavailable: " + currentPatchName);
+
     if (const auto result = chimera::preset::loadPatch(source, patch); result.failed())
         return result;
 

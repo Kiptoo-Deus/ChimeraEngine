@@ -8,3 +8,4 @@ cmake-build-*/
 *.log
 !samples/rejected.log
 sample_sources/
+presets/Source/

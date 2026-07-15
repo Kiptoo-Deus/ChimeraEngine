@@ -1057,7 +1057,10 @@ void ChimeraEngineAudioProcessorEditor::addPageSurfaceControls()
     presetCategoryBox.onChange = [this] { refreshPageSurface(); };
     addAndMakeVisible(presetCategoryBox);
 
-    for (const auto item : { "Sine", "Saw", "Square", "Triangle", "Stack", "Velocity Split", "Expressive Mono", "LFO Pan" })
+    auto presetNames = owner.getAvailablePresetNames();
+    if (presetNames.isEmpty())
+        presetNames.add("Sine");
+    for (const auto& item : presetNames)
         presetBrowserBox.addItem(item, presetBrowserBox.getNumItems() + 1);
     presetBrowserBox.setSelectedId(1, juce::dontSendNotification);
     presetBrowserBox.onChange = [this]
